@@ -75,6 +75,8 @@ if cmd == "db-list-events":
     assert opt("--workstream") == state["workstream"]["id"]
     limit = page_limit()
     events = sorted(state["events"], key=lambda e: e["createdAt"], reverse=True)
+    gone = state.pop("vanishAfterFirstList", [])
+    state["events"] = [e for e in state["events"] if e["id"] not in gone]
     done({"ok": True, "events": events[:limit]})
 if cmd == "db-list-activities":
     assert opt("--workstream") == state["workstream"]["id"]
@@ -85,6 +87,13 @@ if cmd == "db-list-activities":
         state["activities"].append(state["newRow"])
     rows = sorted((r for r in state["activities"] if status is None or r["status"] == status), key=lambda r: r["createdAt"], reverse=True)
     done({"ok": True, "activities": rows[:limit]})
+if cmd == "db-get-activity":
+    if state.get("getActivityFails"):
+        fail("fake: database unavailable")
+    row = next((r for r in state["activities"] if r["id"] == args[0]), None)
+    if row is None:
+        fail("fake: Activity not found")
+    done({"ok": True, "activity": row})
 if cmd == "db-add-event":
     if state.get("addEventFails"):
         fail("fake: add-event refused")
@@ -104,6 +113,8 @@ if cmd == "db-mark-events-read":
             marked += 1
     done({"ok": True, "marked": marked})
 if cmd == "state-publish":
+    if state.get("newRowOnPublish"):
+        state["activities"].append(state["newRowOnPublish"])
     if state.get("publishFails"):
         fail("fake: Portable workstream merge base is unavailable")
     home = os.environ.get("FACTORY_HOME_OVERRIDE")
@@ -133,12 +144,12 @@ if cmd == "state-publish":
     if marker.get("snapshotToken") != state["snapshotToken"]:
         fail("fake: unknown snapshot token")
     state["generation"] += 1
-    if state.get("newRowOnPublish"):
-        state["activities"].append(state["newRowOnPublish"])
     if not state.get("publishClearsNothing"):
         for r in terminal_marker_rows(computer):
             r["workerId"] = None
     state.setdefault("publishes", []).append({"computer": computer, "generation": state["generation"]})
+    if state.get("newEventOnPublish"):
+        state["events"].append(state["newEventOnPublish"])
     (wdir / ".portable-state.json").write_text(json.dumps({"generation": state["generation"], "baseFiles": marker["baseFiles"], "snapshotToken": state["snapshotToken"]}))
     if state.get("publishFailsAfterCommit"):
         fail("fake: reading the current snapshot failed after the server committed")
@@ -334,8 +345,10 @@ class UnstickTests(unittest.TestCase):
             self.assertIn(ref, detail)
         self.assertEqual("info", notices[0]["severity"])
         self.assertTrue(self.h.event("rec-1")["read"])
-        order = [c["cmd"] for c in self.h.calls() if c["cmd"] in ("state-publish", "db-add-event", "db-mark-events-read")]
-        self.assertEqual(["state-publish", "db-add-event", "db-mark-events-read"], order)
+        order = [c["cmd"] for c in self.h.calls() if c["cmd"] in ("state-publish", "db-get-activity", "db-add-event", "db-mark-events-read")]
+        self.assertEqual(["state-publish", "db-get-activity", "db-get-activity", "db-add-event", "db-mark-events-read"], order)
+        self.assertEqual(["act-1", "act-2"], [c["args"][0] for c in self.h.calls("db-get-activity")])
+        self.assertEqual(6, len(self.h.calls("db-list-activities")), "the halt window is read to find and re-check markers, not to prove the clear")
 
     def test_local_dir_untouched_even_with_unpublished_edits(self):
         (self.h.local_dir / "memory" / "worker.md").write_text("# Worker memory\n\n- entry one\n- unpublished local entry\n")
@@ -515,6 +528,46 @@ class UnstickTests(unittest.TestCase):
         self.assertIn("marker rows remain", report["stillBlocked"][0]["reason"])
         self.assertEqual([], self.h.calls("db-add-event"))
         self.assertFalse(self.h.event("rec-1")["read"])
+
+    def test_failed_publish_that_leaves_the_marker_behind_the_window_is_still_blocked(self):
+        # The marker is row 64; an unrelated completion lands during a publish
+        # that fails before committing, pushing it to row 65. Absence from the
+        # halt window is not a clear: each authorized id is read on its own.
+        self.seed(*[activity(f"new-{i}", EVENT_AT + timedelta(seconds=i + 1), marker=False) for i in range(63)], activity("act-old", EVENT_AT - timedelta(minutes=5)))
+        self.h.state["publishFails"] = True
+        self.h.state["newRowOnPublish"] = activity("one-more", EVENT_AT + timedelta(minutes=2), computer=OTHER_COMPUTER, marker=False)
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([], report["released"])
+        self.assertEqual(["act-old"], report["stillBlocked"][0]["activities"])
+        self.assertIn("merge base is unavailable", report["stillBlocked"][0]["reason"])
+        self.assertIn("marker rows remain after publishing: ['act-old']", report["stillBlocked"][0]["reason"])
+        self.assertEqual(["act-old"], [c["args"][0] for c in self.h.calls("db-get-activity")])
+        self.assertEqual([], self.h.calls("db-add-event") + self.h.calls("db-mark-events-read"))
+        self.assertEqual(["act-old"], self.h.marker_rows())
+        self.assertEqual(83, self.h.state["generation"])
+        self.assertFalse(self.h.event("rec-1")["read"])
+        self.h.state["publishFails"] = False
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertIn("halt nothing", report["stillBlocked"][0]["reason"], "now buried, it is reported rather than announced")
+        self.assertEqual([], self.h.notices())
+
+    def test_unreadable_activity_after_publish_is_unverified_not_released(self):
+        self.h.state["getActivityFails"] = True
+        self.seed()
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([], report["released"])
+        self.assertIn("unverified after publishing", report["stillBlocked"][0]["reason"])
+        self.assertIn("database unavailable", report["stillBlocked"][0]["reason"])
+        self.assertEqual([], self.h.calls("db-add-event") + self.h.calls("db-mark-events-read"))
+        self.assertFalse(self.h.event("rec-1")["read"])
+        self.h.state["getActivityFails"] = False
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, ("the cleared marker is proven from the full lists next run and announced", report, stderr))
+        self.assertEqual(1, len(self.h.notices()))
+        self.assertTrue(self.h.event("rec-1")["read"])
 
     def test_missing_api_key_fails_closed_before_publishing(self):
         self.seed()
@@ -709,6 +762,35 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual(EMPTY, report)
         self.assertEqual(1, len(self.h.notices()))
 
+    def test_existing_notice_is_acknowledged_without_a_full_history_proof(self):
+        # The notice was posted but the mark-read failed; with a terminal list
+        # at the 500 cap, a new-notice proof could never succeed, and none is
+        # needed to acknowledge a notice that already exists.
+        for read, size in ((False, 500), (False, 499), (True, 500)):
+            with self.subTest(read=read, size=size):
+                self.h = Harness()
+                self.h.state["events"] = [recovery_event(read=read), notice_event("existing-notice", EVENT_AT + timedelta(minutes=1))]
+                self.h.state["activities"] = [activity(f"old-{i}", EVENT_AT - timedelta(days=1, seconds=i), marker=False) for i in range(size)]
+                code, report, stderr = self.h.run()
+                self.assertEqual(0, code, (report, stderr))
+                self.assertTrue(self.h.event("rec-1")["read"])
+                self.assertEqual(1, len(self.h.notices()))
+                self.assertEqual([], self.h.calls("state-publish") + self.h.calls("db-add-event"))
+                self.assertEqual({"64"}, {c["args"][-1] for c in self.h.calls("db-list-activities")})
+                self.assertEqual(0 if read else 1, len(self.h.calls("db-mark-events-read")))
+                self.assertEqual(1 if read else 2, len(self.h.calls("db-list-events")), "an already-read event with its notice costs nothing more")
+                self.assertEqual(EMPTY if read else {**EMPTY, "released": [{"computer": COMPUTER, "recoveryEvent": "rec-1", "activities": [], "notified": True}]}, report)
+                self.h.cleanup()
+
+    def test_acknowledgment_never_posts_a_replacement_notice(self):
+        self.h.state["events"] = [recovery_event(), notice_event("existing-notice", EVENT_AT + timedelta(minutes=1))]
+        self.h.state["vanishAfterFirstList"] = ["existing-notice"]
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual([], self.h.calls("db-add-event"))
+        self.assertEqual([], self.h.notices())
+        self.assertTrue(self.h.event("rec-1")["read"])
+
     def test_failed_notice_for_a_read_event_is_retried_next_run(self):
         self.h.state["addEventFails"] = True
         self.seed(read=True)
@@ -749,10 +831,20 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual(0, code, (report, stderr))
         self.assertEqual(["evt-2", "evt-3"], [n["id"] for n in self.h.notices()])
         self.assertTrue(self.h.event("rec-1")["read"])
-        self.assertEqual({"db-get-workstream", "db-list-events", "db-list-activities", "state-publish", "db-add-event", "db-mark-events-read"}, {c["cmd"] for c in self.h.calls()})
+        self.assertEqual({"db-get-workstream", "db-list-events", "db-list-activities", "state-publish", "db-get-activity", "db-add-event", "db-mark-events-read"}, {c["cmd"] for c in self.h.calls()})
         code, report, stderr = self.h.run()
         self.assertEqual(EMPTY, report)
         self.assertEqual(2, len(self.h.notices()))
+
+    def test_notice_posted_by_another_actor_during_the_publish_is_not_duplicated(self):
+        self.seed()
+        self.h.state["newEventOnPublish"] = notice_event("their-notice", EVENT_AT + timedelta(minutes=1))
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual([], self.h.calls("db-add-event"))
+        self.assertEqual(["their-notice"], [n["id"] for n in self.h.notices()])
+        self.assertTrue(self.h.event("rec-1")["read"])
+        self.assertTrue(report["released"][0]["notified"])
 
     def test_preexisting_notices_are_never_deleted(self):
         follow_up = notice_event("n-operator", EVENT_AT + timedelta(minutes=5))

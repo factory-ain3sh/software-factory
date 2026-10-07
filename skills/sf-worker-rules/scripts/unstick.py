@@ -114,6 +114,16 @@ def marker_ids(rows, computer):
     return sorted(row["id"] for row in markers(rows).get(computer, []))
 
 
+def still_marked(activity_ids, computer):
+    """The ids whose row still carries this Computer's marker, each read on its own.
+
+    A row can leave the halt window at any time, so absence from a bounded
+    list proves nothing about ids that are already known.
+    """
+    marker = WORKER_PREFIX + computer
+    return [activity_id for activity_id in activity_ids if sf("db-get-activity", activity_id)["activity"].get("workerId") == marker]
+
+
 def computer_of(event):
     match = COMPUTER_IN_DETAIL.search(event.get("detail") or "")
     return match.group(1) if match else None
@@ -250,8 +260,23 @@ def resumed_detail(computer, event):
     )
 
 
+def acknowledge(workstream_id, event, computer):
+    """Mark the recovery event read while it is still unread and still names this Computer.
+
+    Returns whether it did. The event may have folded since it was read (see
+    the module docstring); marking it read then would hide another Computer's
+    report, so the check is against a fresh read.
+    """
+    events, _ = list_events(workstream_id)
+    current = next((other for other in events if other["id"] == event["id"]), None)
+    if current is None or current["read"] or computer_of(current) != computer:
+        return False
+    sf("db-mark-events-read", "--workstream", workstream_id, "--id", event["id"])
+    return True
+
+
 def announce(workstream_id, event, computer, detail):
-    """Post the release notice for this event and Computer unless one exists, then mark the event read.
+    """Post the release notice for this event and Computer unless one exists, then acknowledge the event.
 
     Returns whether a notice was added or the event was marked read.
     """
@@ -262,14 +287,7 @@ def announce(workstream_id, event, computer, detail):
         # the add; the duplicate stays, since another actor's events are not
         # this tool's to delete.
         sf("db-add-event", "--workstream", workstream_id, "--stage", "health", "--severity", "info", "--title", RELEASE_TITLE, "--detail", detail)
-        events, _ = list_events(workstream_id)
-    # The event may have folded since it was read (see the module docstring);
-    # marking it read now would hide another Computer's report.
-    current = next((other for other in events if other["id"] == event["id"]), None)
-    marked = current is not None and not current["read"] and computer_of(current) == computer
-    if marked:
-        sf("db-mark-events-read", "--workstream", workstream_id, "--id", event["id"])
-    return added or marked
+    return acknowledge(workstream_id, event, computer) or added
 
 
 def run(workstream):
@@ -293,22 +311,27 @@ def run(workstream):
         rows = rows_by_computer.get(computer, [])
         entry = {"computer": computer, "recoveryEvent": event["id"], "activities": sorted(r["id"] for r in rows)}
         if not rows:
-            if event["read"] and notices_for(events, event, computer):
+            notified = bool(notices_for(events, event, computer))
+            if notified and event["read"]:
                 continue
-            # Absence from the halt window is not a cleared marker: the row
-            # may sit behind newer ones. Only a complete read with no marker
-            # proves the save was recorded, and the inbox's read flag is not
-            # proof of delivery, so a notice is owed until one exists.
-            every, complete = terminal_rows(workstream_id, LIST_CAP)
-            buried = marker_ids(every, computer)
-            if buried:
-                report["stillBlocked"].append({**entry, "activities": buried, "reason": f"marker rows sit behind the newest {HALT_WINDOW} rows per status, so they halt nothing, but the save is not recorded: {buried}"})
-                continue
-            if not complete:
-                report["stillBlocked"].append({**entry, "reason": f"no marker rows in the halt window, but a terminal list holds {LIST_CAP} or more rows; the read is incomplete"})
-                continue
+            if not notified:
+                # Absence from the halt window is not a cleared marker: the
+                # row may sit behind newer ones. Only a complete read with no
+                # marker proves the save was recorded, and the inbox's read
+                # flag is not proof of delivery, so a notice is owed until one
+                # exists. An existing notice only awaits its acknowledgment,
+                # which needs no proof and must not post a replacement.
+                every, complete = terminal_rows(workstream_id, LIST_CAP)
+                buried = marker_ids(every, computer)
+                if buried:
+                    report["stillBlocked"].append({**entry, "activities": buried, "reason": f"marker rows sit behind the newest {HALT_WINDOW} rows per status, so they halt nothing, but the save is not recorded: {buried}"})
+                    continue
+                if not complete:
+                    report["stillBlocked"].append({**entry, "reason": f"no marker rows in the halt window, but a terminal list holds {LIST_CAP} or more rows; the read is incomplete"})
+                    continue
             try:
-                if announce(workstream_id, event, computer, resumed_detail(computer, event)):
+                settled = acknowledge(workstream_id, event, computer) if notified else announce(workstream_id, event, computer, resumed_detail(computer, event))
+                if settled:
                     report["released"].append({**entry, "notified": True})
             except SfError as error:
                 report["released"].append({**entry, "notified": False, "reason": str(error)})
@@ -328,9 +351,13 @@ def run(workstream):
             # The CLI can fail after the server committed and cleared the
             # marker; the marker state decides, not the exit code.
             publish_error = str(error)
-        remaining = marker_ids(terminal_rows(workstream_id)[0], computer)
-        if remaining:
-            report["stillBlocked"].append({**entry, "reason": publish_error or f"marker rows remain after publishing: {remaining}"})
+        try:
+            remaining = still_marked(entry["activities"], computer)
+            unverified = f"marker rows remain after publishing: {remaining}" if remaining else None
+        except SfError as error:
+            unverified = f"marker state unverified after publishing: {error}"
+        if unverified:
+            report["stillBlocked"].append({**entry, "reason": "; ".join(filter(None, (publish_error, unverified)))})
             continue
         entry["generation"] = generation
         if publish_error:
