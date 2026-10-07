@@ -21,6 +21,7 @@ that otherwise forbid posting outside the workstream.
 | Planning a fix | Preregister the success test: the exact command or reader line that must flip, before editing anything. |
 | A non-trivial diff is ready | Get an adversarial review from the `astra` droid on the full diff plus the plan. Fix or rebut every finding with evidence before pushing. |
 | After every outward write | Re-read the target and confirm the write landed (see rule 4). |
+| Saving workstream files | Worker runs (investigate, implement, steward) never run `droid sf state-publish`: the backend saves their files after the run, and a self-publish breaks that save. They append their memory entry, then record the activity result. Scheduled stages (intake, triage, health, steward sweep) publish once, at the end of the run, with `droid sf state-publish --workstream <id>`. Health and the steward sweep then run `python3 -B ~/repos/software-factory/skills/sf-worker-rules/scripts/unstick.py --workstream <id>`, which restarts a work queue the backend halted because a finished run's files could not be saved. |
 | Run ends | Re-read state and check it against the sentence from run start: each condition done or not done, with evidence. Unfinished work gets a concrete next step in memory. |
 
 ## Rules
@@ -224,4 +225,5 @@ recorded, put those same recovery details in the run's final message.
 | The reader script exits non-zero | Stop acting on that item and report the error text. Do not guess. |
 | A droid is missing or runs on the wrong model | Rerun `scripts/setup-run.sh`; if still missing, use built-in subagent types and record a warning event. |
 | A write's verification fails | Re-read the target; resend only when the read proves it did not land. |
+| `unstick.py` exits 1 | Put its JSON line in the run's final message (it runs after the memory entry is published). `ambiguous` and `stillBlocked` name Computers whose halt it would not or could not release; their recovery event stays unread so Ainesh sees it. Never release one by hand: `state-publish` under another Computer's identity is unstick.py's job only. `error` means a read failed: follow *When Software Factory itself misbehaves*. |
 | A `droid sf` command, the coordinator, or another platform surface misbehaves | Follow *When Software Factory itself misbehaves*. |
