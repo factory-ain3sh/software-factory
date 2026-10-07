@@ -21,8 +21,11 @@ UNSTICK = HERE / "unstick.py"
 WS_ID = "65732847-500e-4f2f-b836-da7e05498812"
 SLUG = "pr-shepherd"
 COMPUTER = "d375f7d6-368c-4eb3-b911-3ea61fc72fcd"
+OTHER_COMPUTER = "7e608741-b124-41f9-a4dd-6d7fe577ccf0"
+TOKEN = "************************************"
 EVENT_AT = datetime(2026, 10, 7, 12, 43, 59, tzinfo=timezone.utc)
 RECOVERY_TITLE = "Worker state publication needs recovery"
+RELEASE_TITLE = "Work queue restarted after a finished run could not be saved"
 
 FAKE_DROID = r'''#!/usr/bin/env python3
 """Fake `droid sf` backed by a JSON state file (FAKE_SF_STATE)."""
@@ -52,28 +55,49 @@ def fail(message):
     print(json.dumps({"ok": False, "error": message}), file=sys.stderr)
     sys.exit(1)
 
+def page_limit():
+    limit = int(opt("--limit", "100"))
+    if limit < 1 or limit > 500:
+        fail("SoftwareFactoryStoreOperationSchema: limit must be between 1 and 500")
+    return limit
+
 def terminal_marker_rows(computer):
     return [r for r in state["activities"] if r["status"] in ("completed", "failed", "canceled") and r.get("workerId") == f"template-computer:{computer}"]
+
+def add_event(title, detail, stage, severity):
+    event = {"id": f"evt-{len(state['events']) + 1}", "workstreamId": opt("--workstream"), "stage": stage, "severity": severity, "title": title, "detail": detail, "read": False, "createdAt": f"2026-10-07T13:00:{len(state['events']):02d}.000Z"}
+    state["events"].append(event)
+    return event
 
 if cmd == "db-get-workstream":
     done({"ok": True, "workstream": state["workstream"]})
 if cmd == "db-list-events":
     assert opt("--workstream") == state["workstream"]["id"]
-    limit = int(opt("--limit", "100"))
+    limit = page_limit()
     events = sorted(state["events"], key=lambda e: e["createdAt"], reverse=True)
     done({"ok": True, "events": events[:limit]})
 if cmd == "db-list-activities":
     assert opt("--workstream") == state["workstream"]["id"]
-    limit = int(opt("--limit", "100"))
+    limit = page_limit()
     status = opt("--status")
-    rows = [r for r in state["activities"] if status is None or r["status"] == status]
+    lists = sum(1 for c in state["calls"] if c["cmd"] == "db-list-activities")
+    if state.get("newRowAfterListCalls") is not None and lists == state["newRowAfterListCalls"] + 1:
+        state["activities"].append(state["newRow"])
+    rows = sorted((r for r in state["activities"] if status is None or r["status"] == status), key=lambda r: r["createdAt"], reverse=True)
     done({"ok": True, "activities": rows[:limit]})
 if cmd == "db-add-event":
     if state.get("addEventFails"):
         fail("fake: add-event refused")
-    event = {"id": f"evt-{len(state['events']) + 1}", "workstreamId": opt("--workstream"), "stage": opt("--stage"), "severity": opt("--severity", "info"), "title": opt("--title"), "detail": opt("--detail"), "read": False, "createdAt": "2026-10-07T13:00:00.000Z"}
-    state["events"].append(event)
+    event = add_event(opt("--title"), opt("--detail"), opt("--stage"), opt("--severity", "info"))
+    if state.get("addEventDuplicates"):
+        add_event(opt("--title"), opt("--detail"), opt("--stage"), opt("--severity", "info"))
     done({"ok": True, "event": event})
+if cmd == "db-delete-event":
+    before = len(state["events"])
+    state["events"] = [e for e in state["events"] if e["id"] != args[0]]
+    if len(state["events"]) == before:
+        fail("fake: Event not found")
+    done({"ok": True, "deleted": args[0]})
 if cmd == "db-mark-events-read":
     ids = opt("--id", repeat=True)
     marked = 0
@@ -92,6 +116,10 @@ if cmd == "state-publish":
     if not os.environ.get("FACTORY_API_KEY"):
         fail("fake: not authenticated")
     wdir = Path(home) / ".factory" / "software-factory" / "workstreams" / state["workstream"]["slug"]
+    stamp = json.loads((wdir / "workstream.json").read_text()) if (wdir / "workstream.json").exists() else None
+    state["lastOwnership"] = stamp
+    if stamp is not None and stamp.get("workstreamId") != state["workstream"]["id"]:
+        fail("fake: Workstream directory is owned by a different workstream (slug reuse)")
     marker = json.loads((wdir / ".portable-state.json").read_text())
     proposed = {}
     for root in ("memory", "scripts", "skills"):
@@ -108,11 +136,15 @@ if cmd == "state-publish":
     if marker.get("snapshotToken") != state["snapshotToken"]:
         fail("fake: unknown snapshot token")
     state["generation"] += 1
+    if state.get("newRowOnPublish"):
+        state["activities"].append(state["newRowOnPublish"])
     if not state.get("publishClearsNothing"):
         for r in terminal_marker_rows(computer):
             r["workerId"] = None
     state.setdefault("publishes", []).append({"computer": computer, "generation": state["generation"]})
     (wdir / ".portable-state.json").write_text(json.dumps({"generation": state["generation"], "baseFiles": marker["baseFiles"], "snapshotToken": state["snapshotToken"]}))
+    if state.get("publishFailsAfterCommit"):
+        fail("fake: reading the current snapshot failed after the server committed")
     done({"ok": True, "generation": state["generation"], "files": marker["baseFiles"], "snapshotToken": state["snapshotToken"]})
 fail(f"fake: unknown command {cmd}")
 '''
@@ -135,24 +167,40 @@ def recovery_event(event_id="rec-1", computer=COMPUTER, at=EVENT_AT, read=False)
     }
 
 
-def activity(activity_id, completed_at, computer=COMPUTER, status="completed", title="Get the tool output bounds PR past its failing check"):
-    return {
+def plain_event(event_id, at, title="Health: all quiet", detail=""):
+    return {"id": event_id, "workstreamId": WS_ID, "severity": "info", "stage": "health", "title": title, "detail": detail, "read": False, "createdAt": iso(at)}
+
+
+def notice_event(event_id, at, recovery_id="rec-1", computer=COMPUTER, title=RELEASE_TITLE):
+    return plain_event(event_id, at, title=title, detail=f"...\nReference: Computer {computer}, recovery event {recovery_id}, SOF-391")
+
+
+def activity(activity_id, completed_at, computer=COMPUTER, status="completed", title="Get the tool output bounds PR past its failing check", marker=True):
+    row = {
         "id": activity_id,
         "workstreamId": WS_ID,
         "kind": "steward",
         "status": status,
-        "workerId": f"template-computer:{computer}",
+        "createdAt": iso(completed_at - timedelta(minutes=10)),
         "completedAt": iso(completed_at),
         "changeTitle": title,
     }
+    if marker:
+        row["workerId"] = f"template-computer:{computer}"
+    return row
+
+
+def base_file(path, content, encoding="utf8", executable=False):
+    raw = base64.b64decode(content) if encoding == "base64" else content.encode()
+    return {"path": path, "content": content, "encoding": encoding, "executable": executable, "sizeBytes": len(raw), "fingerprint": hashlib.sha256(raw).hexdigest()}
 
 
 BASE_FILES = [
-    {"path": "memory/worker.md", "content": "# Worker memory\n\n- entry one\n", "encoding": "utf8", "executable": False},
-    {"path": "scripts/setup-run.sh", "content": "#!/usr/bin/env bash\necho hi\n", "encoding": "utf8", "executable": True},
-    {"path": "scripts/blob.bin", "content": base64.b64encode(bytes(range(256))).decode(), "encoding": "base64", "executable": False},
-    {"path": "scripts/tool.bin", "content": base64.b64encode(b"\x00\x01binary-exec\xff").decode(), "encoding": "base64", "executable": True},
-    {"path": "skills/health/SKILL.md", "content": "# Health\n", "encoding": "utf8", "executable": False},
+    base_file("memory/worker.md", "# Worker memory\n\n- entry one\n"),
+    base_file("scripts/setup-run.sh", "#!/usr/bin/env bash\necho hi\n", executable=True),
+    base_file("scripts/blob.bin", base64.b64encode(bytes(range(256))).decode(), encoding="base64"),
+    base_file("scripts/tool.bin", base64.b64encode(b"\x00\x01binary-exec\xff").decode(), encoding="base64", executable=True),
+    base_file("skills/health/SKILL.md", "# Health\n"),
 ]
 
 
@@ -179,7 +227,7 @@ class Harness:
         self.state_path = self.root / "state.json"
         self.local_dir = self.home / ".factory" / "software-factory" / "workstreams" / SLUG
         self.local_dir.mkdir(parents=True)
-        self.marker = {"generation": 63, "baseFiles": BASE_FILES, "snapshotToken": "tok-63"}
+        self.marker = {"generation": 63, "baseFiles": BASE_FILES, "snapshotToken": TOKEN}
         (self.local_dir / ".portable-state.json").write_text(json.dumps(self.marker))
         (self.local_dir / "workstream.json").write_text(json.dumps({"workstreamId": WS_ID, "slug": SLUG}))
         for entry in BASE_FILES:
@@ -194,7 +242,7 @@ class Harness:
             "events": [],
             "activities": [],
             "generation": 83,
-            "snapshotToken": "tok-63",
+            "snapshotToken": TOKEN,
         }
 
     def run(self, api_key="test-key"):
@@ -216,14 +264,23 @@ class Harness:
     def event(self, event_id):
         return next(e for e in self.state["events"] if e["id"] == event_id)
 
+    def notices(self):
+        return [e for e in self.state["events"] if e["title"] == RELEASE_TITLE]
+
     def marker_rows(self):
-        return [a["id"] for a in self.state["activities"] if a.get("workerId")]
+        return sorted(a["id"] for a in self.state["activities"] if a.get("workerId"))
 
     def calls(self, cmd=None):
         return [c for c in self.state.get("calls", []) if cmd is None or c["cmd"] == cmd]
 
+    def scratch_dirs(self):
+        return list((self.home / ".factory" / "state").glob("sf-unstick-*")) if (self.home / ".factory" / "state").exists() else []
+
     def cleanup(self):
         shutil.rmtree(self.root, ignore_errors=True)
+
+
+EMPTY = {"released": [], "ambiguous": [], "stillBlocked": [], "pending": []}
 
 
 class UnstickTests(unittest.TestCase):
@@ -235,52 +292,56 @@ class UnstickTests(unittest.TestCase):
     def assert_no_pycache(self):
         self.assertEqual([], list(HERE.rglob("__pycache__")))
 
+    def seed(self, *rows, read=False):
+        self.h.state["events"] = [recovery_event(read=read)]
+        self.h.state["activities"] = list(rows) or [activity("act-1", EVENT_AT - timedelta(minutes=5))]
+
+    # ── release journey ──────────────────────────────────────────────────
+
     def test_release_clears_marker_announces_then_marks_read(self):
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [
+        self.seed(
             activity("act-1", EVENT_AT - timedelta(minutes=5)),
             activity("act-2", EVENT_AT - timedelta(minutes=12), status="failed", title="Other change"),
-            activity("act-3", EVENT_AT - timedelta(minutes=5), computer="other-computer-0000-0000-000000000000"),
-        ]
+        )
         code, report, stderr = self.h.run()
-        self.assertEqual(0, code, stderr)
+        self.assertEqual(0, code, (report, stderr))
         self.assertEqual(1, len(report["released"]))
         released = report["released"][0]
         self.assertEqual(COMPUTER, released["computer"])
-        self.assertEqual({"act-1", "act-2"}, set(released["activities"]))
+        self.assertEqual(["act-1", "act-2"], released["activities"])
         self.assertEqual(84, released["generation"])
         self.assertTrue(released["notified"])
-        self.assertEqual([], report["ambiguous"])
-        self.assertEqual([], report["stillBlocked"])
-        self.assertEqual(["act-3"], self.h.marker_rows())
-        publishes = self.h.state["publishes"]
-        self.assertEqual([{"computer": COMPUTER, "generation": 84}], publishes)
+        self.assertEqual([], report["ambiguous"] + report["stillBlocked"] + report["pending"])
+        self.assertEqual([], self.h.marker_rows())
+        self.assertEqual([{"computer": COMPUTER, "generation": 84}], self.h.state["publishes"])
         publish_call = self.h.calls("state-publish")[0]
         self.assertEqual(COMPUTER, publish_call["machine"])
         self.assertTrue(publish_call["home_override"].startswith(str(self.h.home / ".factory" / "state")), publish_call)
         self.assertFalse(Path(publish_call["home_override"]).exists(), "scratch home must be removed")
-        info = [e for e in self.h.state["events"] if e["title"] == "Work queue restarted after a finished run could not be saved"]
-        self.assertEqual(1, len(info))
-        detail = info[0]["detail"]
+        self.assertEqual({"workstreamId": WS_ID, "slug": SLUG}, self.h.state["lastOwnership"])
+        notices = self.h.notices()
+        self.assertEqual(1, len(notices))
+        detail = notices[0]["detail"]
         self.assertIn("since 2026-10-07 12:31 UTC", detail)
         self.assertIn("Get the tool output bounds PR past its failing check", detail)
         self.assertIn("Other change", detail)
         self.assertIn("may be lost", detail)
+        self.assertIn("no longer blocks new work", detail)
+        self.assertNotIn("queued work runs again", detail)
         for ref in (f"Computer {COMPUTER}", "activity act-1", "activity act-2", "recovery event rec-1", "generation 84", "SOF-391"):
             self.assertIn(ref, detail)
-        self.assertEqual("info", info[0]["severity"])
+        self.assertEqual("info", notices[0]["severity"])
         self.assertTrue(self.h.event("rec-1")["read"])
         order = [c["cmd"] for c in self.h.calls() if c["cmd"] in ("state-publish", "db-add-event", "db-mark-events-read")]
         self.assertEqual(["state-publish", "db-add-event", "db-mark-events-read"], order)
 
     def test_local_dir_untouched_even_with_unpublished_edits(self):
         (self.h.local_dir / "memory" / "worker.md").write_text("# Worker memory\n\n- entry one\n- unpublished local entry\n")
-        (self.h.local_dir / "skills" / "new" ).mkdir()
+        (self.h.local_dir / "skills" / "new").mkdir()
         (self.h.local_dir / "skills" / "new" / "SKILL.md").write_text("# unpublished skill\n")
         (self.h.local_dir / "scripts" / "blob.bin").unlink()
         before = tree_digest(self.h.local_dir)
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=5))]
+        self.seed()
         code, report, stderr = self.h.run()
         self.assertEqual(0, code, (report, stderr))
         self.assertEqual([], self.h.marker_rows())
@@ -290,8 +351,7 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual("# Worker memory\n\n- entry one\n", base64.b64decode(proposed["memory/worker.md"]["bytes"]).decode())
 
     def test_base64_and_executable_files_materialize_exactly(self):
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=1))]
+        self.seed()
         code, report, stderr = self.h.run()
         self.assertEqual(0, code, (report, stderr))
         proposed = self.h.state["lastProposed"]
@@ -302,38 +362,49 @@ class UnstickTests(unittest.TestCase):
         self.assertTrue(proposed["scripts/setup-run.sh"]["executable"])
         self.assertFalse(proposed["memory/worker.md"]["executable"])
 
+    # ── authorization guards ─────────────────────────────────────────────
+
     def test_row_completed_after_event_is_ambiguous(self):
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [
-            activity("act-1", EVENT_AT - timedelta(minutes=5)),
-            activity("act-2", EVENT_AT + timedelta(seconds=1)),
-        ]
+        self.seed(activity("act-1", EVENT_AT - timedelta(minutes=5)), activity("act-2", EVENT_AT + timedelta(seconds=1)))
         code, report, stderr = self.h.run()
         self.assertEqual(1, code)
         self.assertEqual([], report["released"])
-        self.assertEqual(1, len(report["ambiguous"]))
         self.assertIn("act-2 finished after the recovery event", report["ambiguous"][0]["reason"])
-        self.assertEqual([], self.h.calls("state-publish"))
-        self.assertEqual([], self.h.calls("db-add-event"))
+        self.assertEqual([], self.h.calls("state-publish") + self.h.calls("db-add-event"))
         self.assertFalse(self.h.event("rec-1")["read"])
         self.assertEqual(["act-1", "act-2"], self.h.marker_rows())
 
     def test_row_completed_long_before_event_is_ambiguous(self):
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=30, seconds=1))]
+        self.seed(activity("act-1", EVENT_AT - timedelta(minutes=30, seconds=1)))
         code, report, stderr = self.h.run()
         self.assertEqual(1, code)
-        self.assertEqual([], report["released"])
         self.assertIn("more than 30 minutes before", report["ambiguous"][0]["reason"])
         self.assertEqual([], self.h.calls("state-publish"))
         self.assertFalse(self.h.event("rec-1")["read"])
 
     def test_row_exactly_thirty_minutes_before_event_is_released(self):
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=30))]
+        self.seed(activity("act-1", EVENT_AT - timedelta(minutes=30)))
         code, report, stderr = self.h.run()
         self.assertEqual(0, code, (report, stderr))
         self.assertEqual(1, len(report["released"]))
+
+    def test_row_without_completion_time_is_ambiguous(self):
+        row = activity("act-1", EVENT_AT - timedelta(minutes=5))
+        del row["completedAt"]
+        self.seed(row)
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertIn("no completion time", report["ambiguous"][0]["reason"])
+        self.assertEqual([], self.h.calls("state-publish"))
+
+    def test_row_with_unreadable_completion_time_is_ambiguous_not_a_crash(self):
+        row = activity("act-1", EVENT_AT - timedelta(minutes=5))
+        row["completedAt"] = "yesterday-ish"
+        self.seed(row)
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertIn("unreadable timestamp", report["ambiguous"][0]["reason"])
+        self.assertEqual([], self.h.calls("state-publish"))
 
     def test_only_newest_recovery_event_for_a_computer_authorizes(self):
         old = recovery_event("rec-old", at=EVENT_AT - timedelta(hours=3), read=True)
@@ -344,105 +415,98 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual("rec-new", report["ambiguous"][0]["recoveryEvent"])
         self.assertEqual([], self.h.calls("state-publish"))
 
+    def test_marker_rows_that_appear_while_authorizing_abort_the_publish(self):
+        # U5 (Computer reuse): the server clears every terminal marker of the
+        # Computer at publish time, so the authorized set must still be the
+        # whole set right before publishing.
+        self.seed(activity("act-old", EVENT_AT - timedelta(minutes=5)))
+        self.h.state["newRowAfterListCalls"] = 3
+        self.h.state["newRow"] = activity("act-new", EVENT_AT + timedelta(minutes=1))
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([], self.h.calls("state-publish"))
+        self.assertEqual([], report["released"])
+        self.assertIn("changed while authorizing", report["stillBlocked"][0]["reason"])
+        self.assertEqual(["act-new", "act-old"], self.h.marker_rows())
+        self.assertFalse(self.h.event("rec-1")["read"])
+        self.assertEqual([], self.h.scratch_dirs())
+
+    def test_row_that_finishes_during_the_publish_is_reported_not_hidden(self):
+        # U5 (Computer reuse): nothing client-side can stop the server from
+        # clearing a marker that appears mid-publish, so the release must say
+        # so and exit 1 instead of reporting a clean success.
+        self.seed(activity("act-old", EVENT_AT - timedelta(minutes=5)))
+        self.h.state["newRowOnPublish"] = activity("act-new", EVENT_AT + timedelta(minutes=1))
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        released = report["released"][0]
+        self.assertEqual(["act-old"], released["activities"])
+        self.assertEqual(["act-new"], released["clearedUnverified"])
+        self.assertTrue(released["notified"])
+        self.assertEqual([], self.h.marker_rows())
+        self.assertEqual(1, len(self.h.notices()))
+
+    # ── ownership of the local snapshot (U1) ─────────────────────────────
+
+    def test_snapshot_owned_by_another_workstream_is_refused(self):
+        (self.h.local_dir / "workstream.json").write_text(json.dumps({"workstreamId": "0f973529-90f7-40bf-99e8-59f84dd968b2", "slug": SLUG}))
+        self.seed()
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([], self.h.calls("state-publish"))
+        self.assertIn("slug reuse", report["stillBlocked"][0]["reason"])
+        self.assertIn("0f973529-90f7-40bf-99e8-59f84dd968b2", report["stillBlocked"][0]["reason"])
+        self.assertEqual(["act-1"], self.h.marker_rows())
+        self.assertEqual([], self.h.scratch_dirs())
+
+    def test_snapshot_without_ownership_stamp_is_refused(self):
+        (self.h.local_dir / "workstream.json").unlink()
+        self.seed()
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([], self.h.calls("state-publish"))
+        self.assertIn("ownership stamp", report["stillBlocked"][0]["reason"])
+
+    def test_scratch_carries_the_real_ownership_stamp_verbatim(self):
+        stamp = {"workstreamId": WS_ID, "slug": SLUG, "extra": "kept"}
+        (self.h.local_dir / "workstream.json").write_text(json.dumps(stamp))
+        self.seed()
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual(stamp, self.h.state["lastOwnership"])
+
+    # ── publish outcomes ─────────────────────────────────────────────────
+
     def test_failed_publish_leaves_event_unread_and_reports_still_blocked(self):
         self.h.state["publishFails"] = True
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=5))]
+        self.seed()
         code, report, stderr = self.h.run()
         self.assertEqual(1, code)
         self.assertEqual([], report["released"])
-        self.assertEqual(1, len(report["stillBlocked"]))
         self.assertIn("merge base is unavailable", report["stillBlocked"][0]["reason"])
         self.assertEqual([], self.h.calls("db-add-event"))
         self.assertFalse(self.h.event("rec-1")["read"])
         self.assertEqual(["act-1"], self.h.marker_rows())
-        self.assertEqual([], list((self.h.home / ".factory" / "state").glob("sf-unstick-*")))
+        self.assertEqual([], self.h.scratch_dirs())
 
-    def test_missing_api_key_fails_closed_before_publishing(self):
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=5))]
-        code, report, stderr = self.h.run(api_key=None)
-        self.assertEqual(1, code)
-        self.assertIn("FACTORY_API_KEY", report["stillBlocked"][0]["reason"])
-        self.assertEqual([], self.h.calls("state-publish"))
-        self.assertEqual(["act-1"], self.h.marker_rows())
-
-    def test_no_recovery_event_means_no_action(self):
-        self.h.state["events"] = [{"id": "evt-x", "workstreamId": WS_ID, "severity": "info", "stage": "health", "title": "Health: all quiet", "detail": "", "read": False, "createdAt": iso(EVENT_AT)}]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=5))]
+    def test_publish_that_fails_after_the_server_committed_is_a_release(self):
+        # U4: the marker state decides, not the CLI's exit code.
+        self.h.state["publishFailsAfterCommit"] = True
+        self.seed()
         code, report, stderr = self.h.run()
         self.assertEqual(0, code, (report, stderr))
-        self.assertEqual({"released": [], "ambiguous": [], "stillBlocked": []}, report)
-        self.assertEqual([], self.h.calls("state-publish"))
-        self.assertEqual([], self.h.calls("db-add-event"))
-        self.assertEqual([], self.h.calls("db-mark-events-read"))
-        self.assertEqual(["act-1"], self.h.marker_rows())
-
-    def test_cleared_marker_with_unread_event_gets_announced_once(self):
-        self.h.state["events"] = [recovery_event()]
-        code, report, stderr = self.h.run()
-        self.assertEqual(0, code, (report, stderr))
-        self.assertEqual([], self.h.calls("state-publish"))
-        info = [e for e in self.h.state["events"] if e["title"] == "Work queue restarted after a finished run could not be saved"]
-        self.assertEqual(1, len(info))
-        self.assertIn("recovery event rec-1", info[0]["detail"])
-        self.assertTrue(self.h.event("rec-1")["read"])
-        self.assertEqual([], report["released"][0]["activities"])
-        code, report, stderr = self.h.run()
-        self.assertEqual(0, code)
-        self.assertEqual({"released": [], "ambiguous": [], "stillBlocked": []}, report)
-        self.assertEqual(1, len([e for e in self.h.state["events"] if e["title"] == "Work queue restarted after a finished run could not be saved"]))
-
-    def test_cleared_marker_with_read_event_is_left_alone(self):
-        self.h.state["events"] = [recovery_event(read=True)]
-        code, report, stderr = self.h.run()
-        self.assertEqual(0, code)
-        self.assertEqual({"released": [], "ambiguous": [], "stillBlocked": []}, report)
-        self.assertEqual([], self.h.calls("db-add-event"))
-
-    def test_existing_notice_is_not_duplicated_but_event_is_marked_read(self):
-        notice = {"id": "evt-info", "workstreamId": WS_ID, "severity": "info", "stage": "health", "title": "Work queue restarted after a finished run could not be saved", "detail": f"...\nReference: Computer {COMPUTER}, recovery event rec-1, SOF-391", "read": False, "createdAt": iso(EVENT_AT + timedelta(minutes=4))}
-        self.h.state["events"] = [recovery_event(), notice]
-        code, report, stderr = self.h.run()
-        self.assertEqual(0, code)
-        self.assertEqual([], self.h.calls("db-add-event"))
-        self.assertTrue(self.h.event("rec-1")["read"])
-
-    def test_failed_announce_keeps_event_unread_and_exits_one(self):
-        self.h.state["addEventFails"] = True
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=5))]
-        code, report, stderr = self.h.run()
-        self.assertEqual(1, code)
         self.assertEqual([], self.h.marker_rows())
-        self.assertFalse(report["released"][0]["notified"])
-        self.assertFalse(self.h.event("rec-1")["read"])
-        self.assertEqual([], self.h.calls("db-mark-events-read"))
-
-    def test_marker_rows_beyond_first_page_are_still_seen(self):
-        self.h.state["events"] = [recovery_event()]
-        filler = [{"id": f"old-{i}", "workstreamId": WS_ID, "kind": "steward", "status": "completed", "completedAt": iso(EVENT_AT - timedelta(days=1))} for i in range(200)]
-        self.h.state["activities"] = filler + [activity("act-late", EVENT_AT + timedelta(minutes=1))]
-        code, report, stderr = self.h.run()
-        self.assertEqual(1, code)
-        self.assertEqual(["act-late"], report["ambiguous"][0]["activities"])
-        self.assertEqual([], self.h.calls("state-publish"))
-
-    def test_row_without_completion_time_is_ambiguous(self):
-        self.h.state["events"] = [recovery_event()]
-        row = activity("act-1", EVENT_AT - timedelta(minutes=5))
-        del row["completedAt"]
-        self.h.state["activities"] = [row]
-        code, report, stderr = self.h.run()
-        self.assertEqual(1, code, (report, stderr))
-        self.assertIn("no completion time", report["ambiguous"][0]["reason"])
-        self.assertEqual([], self.h.calls("state-publish"))
-        self.assertFalse(self.h.event("rec-1")["read"])
+        released = report["released"][0]
+        self.assertTrue(released["notified"])
+        self.assertIsNone(released["generation"])
+        self.assertIn("after the server committed", released["publishError"])
+        self.assertEqual(1, len(self.h.notices()))
+        self.assertNotIn("generation", self.h.notices()[0]["detail"].split("Reference:")[1])
+        self.assertTrue(self.h.event("rec-1")["read"])
 
     def test_publish_that_clears_nothing_is_still_blocked_and_not_announced(self):
         self.h.state["publishClearsNothing"] = True
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=5))]
+        self.seed()
         code, report, stderr = self.h.run()
         self.assertEqual(1, code)
         self.assertEqual(1, len(self.h.calls("state-publish")))
@@ -451,33 +515,237 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual([], self.h.calls("db-add-event"))
         self.assertFalse(self.h.event("rec-1")["read"])
 
+    def test_missing_api_key_fails_closed_before_publishing(self):
+        self.seed()
+        code, report, stderr = self.h.run(api_key=None)
+        self.assertEqual(1, code)
+        self.assertIn("FACTORY_API_KEY", report["stillBlocked"][0]["reason"])
+        self.assertEqual([], self.h.calls("state-publish"))
+
+    # ── local marker failures stay inside the JSON protocol (U6) ─────────
+
+    def test_missing_marker_is_reported_in_the_json_line(self):
+        (self.h.local_dir / ".portable-state.json").unlink()
+        self.seed()
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code)
+        self.assertNotIn("Traceback", stderr)
+        reason = report["stillBlocked"][0]["reason"]
+        self.assertIn("local marker", reason)
+        self.assertIn("is missing", reason)
+        self.assertEqual([], self.h.calls("state-publish"))
+        self.assertFalse(self.h.event("rec-1")["read"])
+
+    def test_malformed_marker_is_reported_in_the_json_line(self):
+        (self.h.local_dir / ".portable-state.json").write_text("{not json")
+        self.seed()
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code)
+        self.assertNotIn("Traceback", stderr)
+        self.assertIn("unreadable", report["stillBlocked"][0]["reason"])
+        self.assertEqual([], self.h.calls("state-publish"))
+
     def test_marker_without_base_snapshot_is_refused_before_publishing(self):
         (self.h.local_dir / ".portable-state.json").write_text(json.dumps({"generation": 63}))
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=5))]
+        self.seed()
         code, report, stderr = self.h.run()
         self.assertEqual(1, code)
         self.assertIn("no base snapshot", report["stillBlocked"][0]["reason"])
         self.assertEqual([], self.h.calls("state-publish"))
-        self.assertEqual(["act-1"], self.h.marker_rows())
+
+    def test_malformed_base_entry_is_refused_before_publishing(self):
+        marker = dict(self.h.marker, baseFiles=BASE_FILES + [{"path": "scripts/x.bin", "content": "not*base64", "encoding": "base64"}])
+        (self.h.local_dir / ".portable-state.json").write_text(json.dumps(marker))
+        self.seed()
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code)
+        self.assertNotIn("Traceback", stderr)
+        self.assertIn("malformed base file entry", report["stillBlocked"][0]["reason"])
+        self.assertEqual([], self.h.calls("state-publish"))
+        self.assertEqual([], self.h.scratch_dirs())
 
     def test_unsafe_base_path_is_refused_before_publishing(self):
         marker = dict(self.h.marker, baseFiles=BASE_FILES + [{"path": "scripts/../../escape.txt", "content": "x", "encoding": "utf8", "executable": False}])
         (self.h.local_dir / ".portable-state.json").write_text(json.dumps(marker))
-        self.h.state["events"] = [recovery_event()]
-        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=5))]
+        self.seed()
         code, report, stderr = self.h.run()
         self.assertEqual(1, code)
         self.assertIn("refusing base file path", report["stillBlocked"][0]["reason"])
         self.assertEqual([], self.h.calls("state-publish"))
         self.assertFalse((self.h.home / ".factory" / "escape.txt").exists())
-        self.assertEqual([], list((self.h.home / ".factory" / "state").glob("sf-unstick-*")))
+        self.assertEqual([], self.h.scratch_dirs())
 
-    def test_read_failure_is_an_error_not_a_quiet_run(self):
+    def test_platform_read_failure_is_an_error_not_a_quiet_run(self):
         self.h.state["workstream"]["executionTemplateId"] = None
         code, report, stderr = self.h.run()
         self.assertEqual(1, code)
         self.assertIn("template Computers", report["error"])
+
+    def test_unexpected_exception_still_prints_the_json_line(self):
+        self.h.state["workstream"] = "not-an-object"
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code)
+        self.assertNotIn("Traceback", stderr)
+        self.assertIn("error", report)
+
+    # ── accounting for every marker (U2, U3) ─────────────────────────────
+
+    def test_no_recovery_event_means_no_release_and_a_pending_entry(self):
+        self.h.state["events"] = [plain_event("evt-x", EVENT_AT)]
+        self.h.state["activities"] = [activity("act-1", EVENT_AT - timedelta(minutes=5))]
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([], report["released"] + report["ambiguous"] + report["stillBlocked"])
+        self.assertEqual([{"computer": COMPUTER, "activities": ["act-1"], "reason": "no recovery event yet; the platform may still be saving that run"}], report["pending"])
+        self.assertEqual([], self.h.calls("state-publish") + self.h.calls("db-add-event") + self.h.calls("db-mark-events-read"))
+        self.assertEqual(["act-1"], self.h.marker_rows())
+
+    def test_release_with_another_computer_still_marked_is_not_a_clear_queue(self):
+        self.seed(activity("act-1", EVENT_AT - timedelta(minutes=5)), activity("act-other", EVENT_AT, computer=OTHER_COMPUTER))
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual(1, len(report["released"]))
+        self.assertEqual(OTHER_COMPUTER, report["pending"][0]["computer"])
+        self.assertEqual(["act-other"], self.h.marker_rows())
+        self.assertNotIn("queued work runs again", self.h.notices()[0]["detail"])
+
+    def test_recovery_event_beyond_the_event_page_is_an_incomplete_read(self):
+        self.seed()
+        self.h.state["events"] += [plain_event(f"filler-{i}", EVENT_AT + timedelta(seconds=i + 1)) for i in range(500)]
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([], report["released"] + report["pending"])
+        self.assertIn("newest 500 events", report["stillBlocked"][0]["reason"])
+        self.assertEqual(["act-1"], report["stillBlocked"][0]["activities"])
+        self.assertEqual([], self.h.calls("state-publish"))
+        self.assertEqual(["500"], [c["args"][-1] for c in self.h.calls("db-list-events")])
+        self.assertEqual(["act-1"], self.h.marker_rows())
+
+    def test_full_event_page_with_the_recovery_event_inside_still_releases(self):
+        self.seed()
+        self.h.state["events"] += [plain_event(f"filler-{i}", EVENT_AT - timedelta(hours=1, seconds=i)) for i in range(499)]
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual(1, len(report["released"]))
+
+    def test_activity_reads_mirror_the_backend_halt_window(self):
+        # U3: the store caps lists at 500 and the coordinator only looks at
+        # the newest 64 rows per terminal status, so that is all that is read.
+        self.seed(*[activity(f"old-{i}", EVENT_AT - timedelta(days=1, minutes=i), marker=False) for i in range(399)], activity("act-1", EVENT_AT - timedelta(minutes=5)))
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual(1, len(report["released"]))
+        self.assertEqual({"64"}, {c["args"][-1] for c in self.h.calls("db-list-activities")})
+
+    def test_marker_outside_the_halt_window_does_not_halt_and_is_ignored(self):
+        self.seed(*[activity(f"new-{i}", EVENT_AT + timedelta(minutes=i + 1), marker=False) for i in range(64)], activity("act-buried", EVENT_AT - timedelta(minutes=5)))
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual([], self.h.calls("state-publish"))
+        self.assertEqual(["act-buried"], self.h.marker_rows())
+        self.assertEqual(1, len(report["released"]), "the unread recovery event with no visible rows gets its notice")
+
+    # ── notices (U4) ─────────────────────────────────────────────────────
+
+    def test_cleared_marker_with_unread_event_gets_announced_once(self):
+        self.h.state["events"] = [recovery_event()]
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual([], self.h.calls("state-publish"))
+        self.assertEqual(1, len(self.h.notices()))
+        self.assertIn("recovery event rec-1", self.h.notices()[0]["detail"])
+        self.assertTrue(self.h.event("rec-1")["read"])
+        self.assertEqual([], report["released"][0]["activities"])
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code)
+        self.assertEqual(EMPTY, report)
+        self.assertEqual(1, len(self.h.notices()))
+
+    def test_cleared_marker_with_read_event_and_no_notice_is_still_announced(self):
+        self.h.state["events"] = [recovery_event(read=True)]
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual(1, len(self.h.notices()))
+        self.assertEqual([], self.h.calls("db-mark-events-read"))
+        code, report, stderr = self.h.run()
+        self.assertEqual(EMPTY, report)
+        self.assertEqual(1, len(self.h.notices()))
+
+    def test_failed_notice_for_a_read_event_is_retried_next_run(self):
+        self.h.state["addEventFails"] = True
+        self.seed(read=True)
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code)
+        self.assertEqual([], self.h.marker_rows())
+        self.assertFalse(report["released"][0]["notified"])
+        self.h.state["addEventFails"] = False
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual(1, len(self.h.notices()))
+
+    def test_existing_notice_is_not_duplicated_but_event_is_marked_read(self):
+        self.h.state["events"] = [recovery_event(), notice_event("evt-info", EVENT_AT + timedelta(minutes=4))]
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code)
+        self.assertEqual([], self.h.calls("db-add-event"))
+        self.assertTrue(self.h.event("rec-1")["read"])
+
+    def test_notice_identity_needs_the_title_and_the_exact_event_id(self):
+        self.h.state["events"] = [
+            recovery_event(),
+            plain_event("mention", EVENT_AT + timedelta(minutes=1), title="Recovery investigation", detail="Still investigating recovery event rec-1"),
+            notice_event("other-notice", EVENT_AT + timedelta(minutes=2), recovery_id="rec-10"),
+        ]
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual(1, len(self.h.calls("db-add-event")))
+        self.assertEqual(2, len(self.h.notices()))
+        self.assertTrue(self.h.event("rec-1")["read"])
+
+    def test_concurrent_duplicate_notices_converge_to_the_oldest(self):
+        self.h.state["addEventDuplicates"] = True
+        self.seed()
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        notices = self.h.notices()
+        self.assertEqual(1, len(notices))
+        self.assertEqual("evt-2", notices[0]["id"])
+        self.assertEqual(["evt-3"], [c["args"][0] for c in self.h.calls("db-delete-event")])
+        self.assertTrue(self.h.event("rec-1")["read"])
+
+    def test_preexisting_duplicate_notices_are_reduced_to_one(self):
+        self.h.state["events"] = [
+            recovery_event(read=True),
+            notice_event("n-newer", EVENT_AT + timedelta(minutes=5)),
+            notice_event("n-older", EVENT_AT + timedelta(minutes=4)),
+            notice_event("n-other", EVENT_AT + timedelta(minutes=6), recovery_id="rec-2", computer=OTHER_COMPUTER),
+        ]
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual([], self.h.calls("db-add-event"))
+        self.assertEqual({"n-older", "n-other"}, {n["id"] for n in self.h.notices()})
+
+    def test_failed_notice_for_a_cleared_marker_is_recorded_not_fatal(self):
+        self.h.state["addEventFails"] = True
+        self.h.state["events"] = [recovery_event(), recovery_event("rec-2", computer=OTHER_COMPUTER, at=EVENT_AT + timedelta(minutes=1))]
+        self.h.state["activities"] = [activity("act-2", EVENT_AT - timedelta(minutes=4), computer=OTHER_COMPUTER)]
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertNotIn("error", report)
+        self.assertEqual({COMPUTER: False, OTHER_COMPUTER: False}, {r["computer"]: r["notified"] for r in report["released"]})
+        self.assertEqual([], self.h.marker_rows(), "the second Computer was still released")
+        self.assertFalse(self.h.event("rec-1")["read"])
+        self.assertFalse(self.h.event("rec-2")["read"])
+
+    def test_failed_announce_keeps_event_unread_and_exits_one(self):
+        self.h.state["addEventFails"] = True
+        self.seed()
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code)
+        self.assertEqual([], self.h.marker_rows())
+        self.assertFalse(report["released"][0]["notified"])
+        self.assertFalse(self.h.event("rec-1")["read"])
+        self.assertEqual([], self.h.calls("db-mark-events-read"))
 
 
 if __name__ == "__main__":
