@@ -16,11 +16,18 @@ rows checked here, so on a reused Computer a run that finishes between the
 check and the publish could lose its final save. The pre-publish re-check only
 narrows that window; binding the clear to activity ids needs the backend.
 
+Recovery events fold (SOF-391): the backend merges an unread recovery event
+with the next one of the same title, overwriting its detail and createdAt and
+raising occurrenceCount, so an event names only the Computer of its latest
+report and an earlier Computer's marker can be left with no event at all. Such
+markers are reported as pending; an event is marked read only while its detail
+still names the Computer that was released and announced under it.
+
 Usage: unstick.py --workstream <id>
 
 Prints one JSON line with `released`, `ambiguous`, `stillBlocked`, and
-`pending` (markers with no recovery event yet). Exit 0 when nothing remains
-blocked and every release was announced, 1 otherwise.
+`pending` (markers with no recovery event). Exit 0 when nothing remains
+blocked and every release was announced, 1 otherwise. It never deletes events.
 """
 
 import argparse
@@ -48,10 +55,10 @@ RELEASE_TITLE = "Work queue restarted after a finished run could not be saved"
 # The coordinator halts claims only when a marker sits within the newest
 # MAX_TOTAL_ACTIVITY_CONCURRENCY (64) rows per terminal status, newest first
 # (activityCoordinator.ts hasPendingPortableStatePublication); older markers
-# do not halt anything, so the same window is read here.
+# do not halt anything, so the same window decides what to publish.
 HALT_WINDOW = 64
 # The store caps every list at 500 rows and the CLI exposes no offset.
-EVENT_PAGE = 500
+LIST_CAP = 500
 
 
 class SfError(Exception):
@@ -79,16 +86,19 @@ def stamp(moment):
 
 def list_events(workstream_id):
     """Newest events first, and whether the page holds the whole history."""
-    events = sf("db-list-events", "--workstream", workstream_id, "--limit", str(EVENT_PAGE))["events"]
+    events = sf("db-list-events", "--workstream", workstream_id, "--limit", str(LIST_CAP))["events"]
     events.sort(key=lambda event: event["createdAt"], reverse=True)
-    return events, len(events) < EVENT_PAGE
+    return events, len(events) < LIST_CAP
 
 
-def terminal_rows(workstream_id):
-    rows = []
+def terminal_rows(workstream_id, limit=HALT_WINDOW):
+    """Newest rows per terminal status, and whether every status fit under the limit."""
+    rows, complete = [], True
     for status in TERMINAL_STATUSES:
-        rows += sf("db-list-activities", "--workstream", workstream_id, "--status", status, "--limit", str(HALT_WINDOW))["activities"]
-    return rows
+        page = sf("db-list-activities", "--workstream", workstream_id, "--status", status, "--limit", str(limit))["activities"]
+        rows += page
+        complete = complete and len(page) < limit
+    return rows, complete
 
 
 def markers(rows):
@@ -104,20 +114,29 @@ def marker_ids(rows, computer):
     return sorted(row["id"] for row in markers(rows).get(computer, []))
 
 
+def computer_of(event):
+    match = COMPUTER_IN_DETAIL.search(event.get("detail") or "")
+    return match.group(1) if match else None
+
+
 def newest_recovery_events(events):
     newest = {}
     for event in events:
-        if event["title"] != RECOVERY_TITLE:
-            continue
-        match = COMPUTER_IN_DETAIL.search(event.get("detail") or "")
-        if match and match.group(1) not in newest:
-            newest[match.group(1)] = event
+        if event["title"] == RECOVERY_TITLE:
+            computer = computer_of(event)
+            if computer and computer not in newest:
+                newest[computer] = event
     return newest
 
 
-def notices_for(events, event):
-    token = re.compile(rf"recovery event {re.escape(event['id'])}(?![0-9A-Za-z-])")
-    return [other for other in events if other["title"] == RELEASE_TITLE and token.search(other.get("detail") or "")]
+def notices_for(events, event, computer):
+    """Release notices already posted for this recovery event and Computer.
+
+    A folded event can name a different Computer than the one an earlier
+    notice was posted for, so the event id alone does not identify the notice.
+    """
+    reference = re.compile(rf"Computer {re.escape(computer)}\b.*\brecovery event {re.escape(event['id'])}(?![0-9A-Za-z-])")
+    return [other for other in events if other["title"] == RELEASE_TITLE and reference.search(other.get("detail") or "")]
 
 
 def rejection(rows, event):
@@ -231,31 +250,26 @@ def resumed_detail(computer, event):
     )
 
 
-def announce(workstream_id, event, detail, events=None):
-    """Leave exactly one release notice for the recovery event, then mark it read.
+def announce(workstream_id, event, computer, detail):
+    """Post the release notice for this event and Computer unless one exists, then mark the event read.
 
     Returns whether a notice was added or the event was marked read.
     """
-    if events is None:
-        events, _ = list_events(workstream_id)
-    added = False
-    if not notices_for(events, event):
+    events, _ = list_events(workstream_id)
+    added = not notices_for(events, event, computer)
+    if added:
+        # A concurrent actor can post the same notice between the check and
+        # the add; the duplicate stays, since another actor's events are not
+        # this tool's to delete.
         sf("db-add-event", "--workstream", workstream_id, "--stage", "health", "--severity", "info", "--title", RELEASE_TITLE, "--detail", detail)
         events, _ = list_events(workstream_id)
-        added = True
-    # Two stages can release the same Computer at once and the store has no
-    # idempotency key, so every actor keeps the oldest notice and deletes the
-    # rest; a delete that loses the race to another actor is already done.
-    duplicates = sorted(notices_for(events, event), key=lambda notice: (notice["createdAt"], notice["id"]))[1:]
-    for duplicate in duplicates:
-        try:
-            sf("db-delete-event", duplicate["id"])
-        except SfError:
-            pass
-    if not event.get("read"):
+    # The event may have folded since it was read (see the module docstring);
+    # marking it read now would hide another Computer's report.
+    current = next((other for other in events if other["id"] == event["id"]), None)
+    marked = current is not None and not current["read"] and computer_of(current) == computer
+    if marked:
         sf("db-mark-events-read", "--workstream", workstream_id, "--id", event["id"])
-        return True
-    return added
+    return added or marked
 
 
 def run(workstream):
@@ -266,24 +280,35 @@ def run(workstream):
     workstream_id, slug = row["id"], row["slug"]
     events, events_complete = list_events(workstream_id)
     recovery = newest_recovery_events(events)
-    rows_by_computer = markers(terminal_rows(workstream_id))
+    rows_by_computer = markers(terminal_rows(workstream_id)[0])
     for computer, rows in rows_by_computer.items():
         if computer in recovery:
             continue
         entry = {"computer": computer, "activities": [r["id"] for r in rows]}
         if events_complete:
-            report["pending"].append({**entry, "reason": "no recovery event yet; the platform may still be saving that run"})
+            report["pending"].append({**entry, "reason": "no recovery event names this Computer; the platform may still be saving that run, or its report folded into another Computer's recovery event (SOF-391)"})
         else:
-            report["stillBlocked"].append({**entry, "reason": f"no recovery event within the newest {EVENT_PAGE} events; the read is incomplete"})
+            report["stillBlocked"].append({**entry, "reason": f"no recovery event within the newest {LIST_CAP} events; the read is incomplete"})
     for computer, event in recovery.items():
         rows = rows_by_computer.get(computer, [])
         entry = {"computer": computer, "recoveryEvent": event["id"], "activities": sorted(r["id"] for r in rows)}
         if not rows:
-            # A release that was never announced, or announced but never
-            # marked read, finishes here; the inbox's read flag is not proof
-            # of delivery, so a notice is owed until one exists.
+            if event["read"] and notices_for(events, event, computer):
+                continue
+            # Absence from the halt window is not a cleared marker: the row
+            # may sit behind newer ones. Only a complete read with no marker
+            # proves the save was recorded, and the inbox's read flag is not
+            # proof of delivery, so a notice is owed until one exists.
+            every, complete = terminal_rows(workstream_id, LIST_CAP)
+            buried = marker_ids(every, computer)
+            if buried:
+                report["stillBlocked"].append({**entry, "activities": buried, "reason": f"marker rows sit behind the newest {HALT_WINDOW} rows per status, so they halt nothing, but the save is not recorded: {buried}"})
+                continue
+            if not complete:
+                report["stillBlocked"].append({**entry, "reason": f"no marker rows in the halt window, but a terminal list holds {LIST_CAP} or more rows; the read is incomplete"})
+                continue
             try:
-                if announce(workstream_id, event, resumed_detail(computer, event), events):
+                if announce(workstream_id, event, computer, resumed_detail(computer, event)):
                     report["released"].append({**entry, "notified": True})
             except SfError as error:
                 report["released"].append({**entry, "notified": False, "reason": str(error)})
@@ -292,7 +317,7 @@ def run(workstream):
         if why:
             report["ambiguous"].append({**entry, "reason": why})
             continue
-        before = terminal_rows(workstream_id)
+        before, _ = terminal_rows(workstream_id)
         if marker_ids(before, computer) != entry["activities"]:
             report["stillBlocked"].append({**entry, "reason": f"marker rows for Computer {computer} changed while authorizing: {marker_ids(before, computer)}"})
             continue
@@ -303,23 +328,15 @@ def run(workstream):
             # The CLI can fail after the server committed and cleared the
             # marker; the marker state decides, not the exit code.
             publish_error = str(error)
-        after = terminal_rows(workstream_id)
-        remaining = marker_ids(after, computer)
+        remaining = marker_ids(terminal_rows(workstream_id)[0], computer)
         if remaining:
             report["stillBlocked"].append({**entry, "reason": publish_error or f"marker rows remain after publishing: {remaining}"})
             continue
         entry["generation"] = generation
         if publish_error:
             entry["publishError"] = publish_error
-        # The server clears every terminal marker of the Computer, not the
-        # authorized ids: a row that finished during the publish and lost its
-        # marker may have lost its final save (Computer reuse only).
-        before_ids = {row["id"] for row in before}
-        swept = sorted(row["id"] for row in after if row["id"] not in before_ids and not row.get("workerId"))
-        if swept:
-            entry["clearedUnverified"] = swept
         try:
-            announce(workstream_id, event, release_detail(computer, rows, event, generation))
+            announce(workstream_id, event, computer, release_detail(computer, rows, event, generation))
             report["released"].append({**entry, "notified": True})
         except SfError as error:
             report["released"].append({**entry, "notified": False, "reason": str(error)})
@@ -340,7 +357,7 @@ def main():
         print(json.dumps({**empty, "error": f"{type(error).__name__}: {error}"}))
         return 1
     print(json.dumps(report))
-    blocked = report["ambiguous"] or report["stillBlocked"] or report["pending"] or any(not r["notified"] or "clearedUnverified" in r for r in report["released"])
+    blocked = report["ambiguous"] or report["stillBlocked"] or report["pending"] or any(not r["notified"] for r in report["released"])
     return 1 if blocked else 0
 
 

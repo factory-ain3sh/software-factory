@@ -91,13 +91,10 @@ if cmd == "db-add-event":
     event = add_event(opt("--title"), opt("--detail"), opt("--stage"), opt("--severity", "info"))
     if state.get("addEventDuplicates"):
         add_event(opt("--title"), opt("--detail"), opt("--stage"), opt("--severity", "info"))
+    folded = state.get("replaceEventOnAdd")
+    if folded:
+        state["events"] = [folded if e["id"] == folded["id"] else e for e in state["events"]]
     done({"ok": True, "event": event})
-if cmd == "db-delete-event":
-    before = len(state["events"])
-    state["events"] = [e for e in state["events"] if e["id"] != args[0]]
-    if len(state["events"]) == before:
-        fail("fake: Event not found")
-    done({"ok": True, "deleted": args[0]})
 if cmd == "db-mark-events-read":
     ids = opt("--id", repeat=True)
     marked = 0
@@ -165,6 +162,11 @@ def recovery_event(event_id="rec-1", computer=COMPUTER, at=EVENT_AT, read=False)
         "read": read,
         "createdAt": iso(at),
     }
+
+
+def folded_recovery_event(event_id="rec-1", computer=OTHER_COMPUTER, first_at=EVENT_AT, at=EVENT_AT + timedelta(minutes=1)):
+    """The backend's fold of a second report into an unread event: same id, latest detail and createdAt."""
+    return {**recovery_event(event_id, computer=computer, at=at), "occurrenceCount": 2, "firstSeenAt": iso(first_at)}
 
 
 def plain_event(event_id, at, title="Health: all quiet", detail=""):
@@ -431,18 +433,17 @@ class UnstickTests(unittest.TestCase):
         self.assertFalse(self.h.event("rec-1")["read"])
         self.assertEqual([], self.h.scratch_dirs())
 
-    def test_row_that_finishes_during_the_publish_is_reported_not_hidden(self):
-        # U5 (Computer reuse): nothing client-side can stop the server from
-        # clearing a marker that appears mid-publish, so the release must say
-        # so and exit 1 instead of reporting a clean success.
+    def test_row_that_finishes_during_the_publish_is_not_called_a_loss(self):
+        # Nothing binds a terminal row to a Computer once its workerId is
+        # gone, so a row that lands mid-publish is ordinary concurrency, not
+        # evidence that this release swept its save.
         self.seed(activity("act-old", EVENT_AT - timedelta(minutes=5)))
-        self.h.state["newRowOnPublish"] = activity("act-new", EVENT_AT + timedelta(minutes=1))
+        self.h.state["newRowOnPublish"] = activity("act-new", EVENT_AT + timedelta(minutes=1), computer=OTHER_COMPUTER, marker=False)
         code, report, stderr = self.h.run()
-        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual(0, code, (report, stderr))
         released = report["released"][0]
+        self.assertEqual({"computer", "recoveryEvent", "activities", "generation", "notified"}, set(released))
         self.assertEqual(["act-old"], released["activities"])
-        self.assertEqual(["act-new"], released["clearedUnverified"])
-        self.assertTrue(released["notified"])
         self.assertEqual([], self.h.marker_rows())
         self.assertEqual(1, len(self.h.notices()))
 
@@ -596,9 +597,24 @@ class UnstickTests(unittest.TestCase):
         code, report, stderr = self.h.run()
         self.assertEqual(1, code, (report, stderr))
         self.assertEqual([], report["released"] + report["ambiguous"] + report["stillBlocked"])
-        self.assertEqual([{"computer": COMPUTER, "activities": ["act-1"], "reason": "no recovery event yet; the platform may still be saving that run"}], report["pending"])
+        self.assertEqual([{"computer": COMPUTER, "activities": ["act-1"], "reason": "no recovery event names this Computer; the platform may still be saving that run, or its report folded into another Computer's recovery event (SOF-391)"}], report["pending"])
         self.assertEqual([], self.h.calls("state-publish") + self.h.calls("db-add-event") + self.h.calls("db-mark-events-read"))
         self.assertEqual(["act-1"], self.h.marker_rows())
+
+    def test_marker_whose_report_folded_into_another_computers_event_is_pending(self):
+        # The fold erased the first Computer from the event, so its marker has
+        # no authorization; the event releases only the Computer it names now.
+        self.h.state["events"] = [folded_recovery_event()]
+        self.h.state["activities"] = [activity("act-old", EVENT_AT - timedelta(minutes=5)), activity("act-second", EVENT_AT - timedelta(minutes=3), computer=OTHER_COMPUTER)]
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([OTHER_COMPUTER], [r["computer"] for r in report["released"]])
+        self.assertEqual([{"computer": COMPUTER, "activities": ["act-old"]}], [{k: v for k, v in p.items() if k != "reason"} for p in report["pending"]])
+        self.assertIn("folded", report["pending"][0]["reason"])
+        self.assertEqual(["act-old"], self.h.marker_rows())
+        self.assertEqual([OTHER_COMPUTER], [c["machine"] for c in self.h.calls("state-publish")])
+        self.assertIn(f"Computer {OTHER_COMPUTER}", self.h.notices()[0]["detail"])
+        self.assertTrue(self.h.event("rec-1")["read"], "its detail still names the released Computer")
 
     def test_release_with_another_computer_still_marked_is_not_a_clear_queue(self):
         self.seed(activity("act-1", EVENT_AT - timedelta(minutes=5)), activity("act-other", EVENT_AT, computer=OTHER_COMPUTER))
@@ -637,21 +653,42 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual(1, len(report["released"]))
         self.assertEqual({"64"}, {c["args"][-1] for c in self.h.calls("db-list-activities")})
 
-    def test_marker_outside_the_halt_window_does_not_halt_and_is_ignored(self):
+    def test_marker_behind_the_halt_window_halts_nothing_and_is_not_called_cleared(self):
         self.seed(*[activity(f"new-{i}", EVENT_AT + timedelta(minutes=i + 1), marker=False) for i in range(64)], activity("act-buried", EVENT_AT - timedelta(minutes=5)))
         code, report, stderr = self.h.run()
-        self.assertEqual(0, code, (report, stderr))
-        self.assertEqual([], self.h.calls("state-publish"))
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([], self.h.calls("state-publish") + self.h.calls("db-add-event") + self.h.calls("db-mark-events-read"))
         self.assertEqual(["act-buried"], self.h.marker_rows())
-        self.assertEqual(1, len(report["released"]), "the unread recovery event with no visible rows gets its notice")
+        self.assertEqual([], report["released"] + report["pending"])
+        self.assertEqual(["act-buried"], report["stillBlocked"][0]["activities"])
+        self.assertIn("halt nothing", report["stillBlocked"][0]["reason"])
+        self.assertFalse(self.h.event("rec-1")["read"])
+        self.assertEqual(["64", "64", "64", "500", "500", "500"], [c["args"][-1] for c in self.h.calls("db-list-activities")])
+
+    def test_late_notice_needs_a_complete_terminal_read_with_no_marker(self):
+        # 500 newer unmarked rows fill the completed list, so the marker (if
+        # any) sits beyond what the store can return: nothing is proven.
+        self.h.state["events"] = [recovery_event()]
+        self.h.state["activities"] = [activity(f"new-{i}", EVENT_AT + timedelta(minutes=i + 1), marker=False) for i in range(500)]
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code, (report, stderr))
+        self.assertEqual([], report["released"] + report["pending"] + report["ambiguous"])
+        self.assertIn("incomplete", report["stillBlocked"][0]["reason"])
+        self.assertEqual("rec-1", report["stillBlocked"][0]["recoveryEvent"])
+        self.assertEqual([], self.h.calls("state-publish") + self.h.calls("db-add-event") + self.h.calls("db-mark-events-read"))
+        self.assertEqual([], self.h.notices())
+        self.assertFalse(self.h.event("rec-1")["read"])
 
     # ── notices (U4) ─────────────────────────────────────────────────────
 
     def test_cleared_marker_with_unread_event_gets_announced_once(self):
         self.h.state["events"] = [recovery_event()]
+        self.h.state["activities"] = [activity("done", EVENT_AT - timedelta(minutes=5), marker=False)]
         code, report, stderr = self.h.run()
         self.assertEqual(0, code, (report, stderr))
         self.assertEqual([], self.h.calls("state-publish"))
+        # The halt window alone proves nothing; the clear is read from the full lists.
+        self.assertEqual(["64", "64", "64", "500", "500", "500"], [c["args"][-1] for c in self.h.calls("db-list-activities")])
         self.assertEqual(1, len(self.h.notices()))
         self.assertIn("recovery event rec-1", self.h.notices()[0]["detail"])
         self.assertTrue(self.h.event("rec-1")["read"])
@@ -660,6 +697,7 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertEqual(EMPTY, report)
         self.assertEqual(1, len(self.h.notices()))
+        self.assertEqual(["64", "64", "64"], [c["args"][-1] for c in self.h.calls("db-list-activities")][6:], "nothing owed, nothing re-read")
 
     def test_cleared_marker_with_read_event_and_no_notice_is_still_announced(self):
         self.h.state["events"] = [recovery_event(read=True)]
@@ -702,28 +740,70 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual(2, len(self.h.notices()))
         self.assertTrue(self.h.event("rec-1")["read"])
 
-    def test_concurrent_duplicate_notices_converge_to_the_oldest(self):
+    def test_concurrent_duplicate_notices_are_kept(self):
+        # The store has no idempotency key, so two actors can both post; the
+        # fake knows no delete command, so any attempt would fail the run.
         self.h.state["addEventDuplicates"] = True
         self.seed()
         code, report, stderr = self.h.run()
         self.assertEqual(0, code, (report, stderr))
-        notices = self.h.notices()
-        self.assertEqual(1, len(notices))
-        self.assertEqual("evt-2", notices[0]["id"])
-        self.assertEqual(["evt-3"], [c["args"][0] for c in self.h.calls("db-delete-event")])
+        self.assertEqual(["evt-2", "evt-3"], [n["id"] for n in self.h.notices()])
         self.assertTrue(self.h.event("rec-1")["read"])
+        self.assertEqual({"db-get-workstream", "db-list-events", "db-list-activities", "state-publish", "db-add-event", "db-mark-events-read"}, {c["cmd"] for c in self.h.calls()})
+        code, report, stderr = self.h.run()
+        self.assertEqual(EMPTY, report)
+        self.assertEqual(2, len(self.h.notices()))
 
-    def test_preexisting_duplicate_notices_are_reduced_to_one(self):
-        self.h.state["events"] = [
+    def test_preexisting_notices_are_never_deleted(self):
+        follow_up = notice_event("n-operator", EVENT_AT + timedelta(minutes=5))
+        follow_up.update(stage="system", severity="warning", detail=f"Operator follow-up: archived memory is restored at recovery/archive.md.\nReference: Computer {COMPUTER}, recovery event rec-1, SOF-391")
+        events = [
             recovery_event(read=True),
-            notice_event("n-newer", EVENT_AT + timedelta(minutes=5)),
+            follow_up,
             notice_event("n-older", EVENT_AT + timedelta(minutes=4)),
             notice_event("n-other", EVENT_AT + timedelta(minutes=6), recovery_id="rec-2", computer=OTHER_COMPUTER),
         ]
+        self.h.state["events"] = list(events)
         code, report, stderr = self.h.run()
         self.assertEqual(0, code, (report, stderr))
-        self.assertEqual([], self.h.calls("db-add-event"))
-        self.assertEqual({"n-older", "n-other"}, {n["id"] for n in self.h.notices()})
+        self.assertEqual(EMPTY, report)
+        self.assertEqual([], self.h.calls("db-add-event") + self.h.calls("db-mark-events-read"))
+        self.assertEqual(events, self.h.state["events"])
+
+    def test_event_that_folds_during_the_announce_is_left_unread(self):
+        # Between the notice and the mark-read, a second Computer's failure
+        # folded into rec-1; the event now reports that Computer, so marking
+        # it read would hide its report. The next run handles it under the
+        # same id with its own notice.
+        self.seed(activity("act-old", EVENT_AT - timedelta(minutes=5)))
+        self.h.state["replaceEventOnAdd"] = folded_recovery_event()
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual([], self.h.marker_rows())
+        self.assertTrue(report["released"][0]["notified"])
+        self.assertIn(f"Computer {COMPUTER}", self.h.notices()[0]["detail"])
+        self.assertEqual([], self.h.calls("db-mark-events-read"))
+        self.assertFalse(self.h.event("rec-1")["read"])
+        self.h.state["activities"].append(activity("act-second", EVENT_AT - timedelta(minutes=3), computer=OTHER_COMPUTER))
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual([OTHER_COMPUTER], [r["computer"] for r in report["released"]])
+        self.assertEqual([], self.h.marker_rows())
+        self.assertEqual(2, len(self.h.notices()))
+        self.assertIn(f"Computer {OTHER_COMPUTER}", self.h.notices()[1]["detail"])
+        self.assertTrue(self.h.event("rec-1")["read"])
+
+    def test_notice_identity_needs_the_computer_as_well_as_the_event(self):
+        # A notice posted for the Computer a since-folded event used to name
+        # does not cover the Computer it names now.
+        self.h.state["events"] = [folded_recovery_event(), notice_event("n-first", EVENT_AT + timedelta(minutes=2), computer=COMPUTER)]
+        self.h.state["activities"] = [activity("act-second", EVENT_AT - timedelta(minutes=3), computer=OTHER_COMPUTER)]
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual(1, len(self.h.calls("db-add-event")))
+        self.assertEqual(2, len(self.h.notices()))
+        self.assertIn(f"Computer {OTHER_COMPUTER}", self.h.notices()[1]["detail"])
+        self.assertTrue(self.h.event("rec-1")["read"])
 
     def test_failed_notice_for_a_cleared_marker_is_recorded_not_fatal(self):
         self.h.state["addEventFails"] = True
