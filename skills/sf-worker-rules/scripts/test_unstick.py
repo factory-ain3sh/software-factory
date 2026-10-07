@@ -29,7 +29,7 @@ RELEASE_TITLE = "Work queue restarted after a finished run could not be saved"
 
 FAKE_DROID = r'''#!/usr/bin/env python3
 """Fake `droid sf` backed by a JSON state file (FAKE_SF_STATE)."""
-import base64, json, os, sys
+import base64, json, os, stat, sys
 from pathlib import Path
 
 state_path = Path(os.environ["FAKE_SF_STATE"])
@@ -47,7 +47,13 @@ def opt(name, default=None, repeat=False):
 
 def done(payload, code=0):
     state_path.write_text(json.dumps(state))
-    print(json.dumps(payload))
+    text = json.dumps(payload)
+    # Models the real CLI, which exits without draining a pipe.
+    if state.get("truncatePipedStdout") and stat.S_ISFIFO(os.fstat(1).st_mode):
+        text = text[: len(text) // 2]
+    if cmd in state.get("garbleStdout", []):
+        text = text[: len(text) // 2]
+    print(text)
     sys.exit(code)
 
 def fail(message):
@@ -349,6 +355,23 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual(["state-publish", "db-get-activity", "db-get-activity", "db-add-event", "db-mark-events-read"], order)
         self.assertEqual(["act-1", "act-2"], [c["args"][0] for c in self.h.calls("db-get-activity")])
         self.assertEqual(6, len(self.h.calls("db-list-activities")), "the halt window is read to find and re-check markers, not to prove the clear")
+
+    def test_reads_survive_a_cli_that_truncates_piped_stdout(self):
+        self.seed()
+        self.h.state["truncatePipedStdout"] = True
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual(1, len(report["released"]))
+        self.assertEqual([], self.h.marker_rows())
+
+    def test_unparseable_cli_output_names_the_subcommand(self):
+        self.seed()
+        self.h.state["garbleStdout"] = ["db-list-events"]
+        code, report, stderr = self.h.run()
+        self.assertEqual(1, code)
+        self.assertIn("droid sf db-list-events printed", report["error"])
+        self.assertIn("unparseable JSON", report["error"])
+        self.assertEqual([], self.h.calls("state-publish"))
 
     def test_local_dir_untouched_even_with_unpublished_edits(self):
         (self.h.local_dir / "memory" / "worker.md").write_text("# Worker memory\n\n- entry one\n- unpublished local entry\n")

@@ -66,11 +66,19 @@ class SfError(Exception):
 
 
 def sf(*args, env=None):
-    proc = subprocess.run(["droid", "sf", *args], capture_output=True, text=True, env=env)
+    # stdout goes to a file, not a pipe: the CLI exits without draining a
+    # pipe, so output past the 64 KiB pipe buffer can be lost.
+    with tempfile.TemporaryFile(mode="w+") as out:
+        proc = subprocess.run(["droid", "sf", *args], stdout=out, stderr=subprocess.PIPE, text=True, env=env)
+        out.seek(0)
+        stdout = out.read()
     if proc.returncode != 0:
-        output = (proc.stderr or proc.stdout).strip()[-800:]
+        output = (proc.stderr or stdout).strip()[-800:]
         raise SfError(f"droid sf {args[0]} failed: {output}")
-    return json.loads(proc.stdout)
+    try:
+        return json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise SfError(f"droid sf {args[0]} printed {len(stdout)} chars of unparseable JSON: {exc}")
 
 
 def when(value):
