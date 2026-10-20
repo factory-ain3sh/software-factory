@@ -90,8 +90,9 @@ that otherwise forbid posting outside the workstream.
    recognizes workstream PRs by that link.
 7. Open it ready for review. Reviewers are requested once the PR is finished,
    not at open: `~/.agents/skills/slack-cli/ops/review-request.md` owns the
-   readiness gate and whom to ask, and PR Shepherd's review request carries it
-   out for workstream PRs. Never request factory-ain3sh.
+   readiness gate and whom to ask. For workstream PRs, PR Shepherd DMs Ainesh
+   once only approval remains, and he asks for review himself. Never request
+   factory-ain3sh.
 
 ## When a run measures a target
 

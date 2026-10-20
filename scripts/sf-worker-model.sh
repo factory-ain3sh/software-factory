@@ -6,12 +6,16 @@
 # ain3sh-dev template runs this as this repository's setup script; it takes
 # effect on the next template build.
 #
-# sessionDefaultSettings pins workers to Fable 5.1. Cloud session sync comes
-# from the user settings the template writes; the activity coordinator needs it
-# to see a worker's session as alive.
+# sessionDefaultSettings pins each workstream's workers: PR Shepherd to Opus 5.5,
+# the others to Fable 5.1. Cloud session sync comes from the user settings the
+# template writes; the activity coordinator needs it to see a worker's session
+# as alive.
 set -euo pipefail
-for slug in pr-shepherd ownership-incident-fixer re-review; do
-  dir="$HOME/.factory/software-factory/workstreams/$slug/.factory"
+pin() {
+  dir="$HOME/.factory/software-factory/workstreams/$1/.factory"
   mkdir -p "$dir"
-  printf '%s\n' '{"sessionDefaultSettings":{"model":"claude-fable-5.1","reasoningEffort":"high"}}' >"$dir/settings.json"
-done
+  printf '{"sessionDefaultSettings":{"model":"%s","reasoningEffort":"high"}}\n' "$2" >"$dir/settings.json"
+}
+pin pr-shepherd claude-opus-5-5
+pin ownership-incident-fixer claude-fable-5.1
+pin re-review claude-fable-5.1
