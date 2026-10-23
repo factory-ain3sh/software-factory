@@ -43,7 +43,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 RECOVERY_TITLE = "Worker state publication needs recovery"
-COMPUTER_IN_DETAIL = re.compile(r"from Computer ([0-9a-f-]{36})")
+# The backend has worded the notice both "published from Computer <id>" and
+# "portable state on Computer <id>"; the title already identifies the notice.
+COMPUTER_IN_DETAIL = re.compile(r"\b(?:from|on) Computer ([0-9a-f-]{36})")
 WORKER_PREFIX = "template-computer:"
 TERMINAL_STATUSES = ("completed", "failed", "canceled")
 PORTABLE_ROOTS = ("memory", "scripts", "skills")

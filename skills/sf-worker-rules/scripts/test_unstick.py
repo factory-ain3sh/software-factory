@@ -356,6 +356,17 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual(["act-1", "act-2"], [c["args"][0] for c in self.h.calls("db-get-activity")])
         self.assertEqual(6, len(self.h.calls("db-list-activities")), "the halt window is read to find and re-check markers, not to prove the clear")
 
+    def test_notice_naming_the_computer_by_portable_state_releases_it(self):
+        self.seed()
+        self.h.state["events"][0]["detail"] = (
+            f"Activity act-1 finished 15 minutes ago, but its portable state on Computer {COMPUTER} was never published "
+            "and cannot be published automatically. New activities are on hold until that state is recovered from the Computer."
+        )
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual([COMPUTER], [r["computer"] for r in report["released"]])
+        self.assertEqual([], self.h.marker_rows())
+
     def test_reads_survive_a_cli_that_truncates_piped_stdout(self):
         self.seed()
         self.h.state["truncatePipedStdout"] = True
