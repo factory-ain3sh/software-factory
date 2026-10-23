@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../../factory-mono/apps/cli/src/*"],
+      "@mono/*": ["../../factory-mono/*"]
+    }
+  }
+}
