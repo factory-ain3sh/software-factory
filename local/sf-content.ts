@@ -9,7 +9,7 @@ import {
 } from '@factory/software-factory-db';
 import { backend } from './factory';
 const [mode, WS, dir] = process.argv.slice(2);
-if (!dir || !WS) throw new Error('usage: pull|push <workstreamId> <dir>');
+if (!dir || !WS) throw new Error('usage: pull|push <workstreamId> <dir> | release <workstreamId> <computerId>');
 const fetch = backend as any;
 if (mode === 'pull') {
   const c = await getRemoteWorkstreamContent(fetch, WS);
@@ -26,5 +26,13 @@ if (mode === 'pull') {
   });
   await writeWorkstreamContentGeneration(dir, result.generation, result.files, result.snapshotToken);
   console.log(JSON.stringify({ pushed: true, generation: result.generation, fileCount: result.fileCount }));
+} else if (mode === 'release') {
+  // A base-equal publish under the stuck Computer's identity clears its awaitsStatePublication marker.
+  const c = await getRemoteWorkstreamContent(fetch, WS);
+  const result = await publishRemoteWorkstreamContent(fetch, {
+    workstreamId: WS, expectedGeneration: c.generation, computerId: dir, files: c.files,
+    baseFiles: c.files, baseSnapshotToken: c.snapshotToken,
+  });
+  console.log(JSON.stringify({ released: dir, generation: result.generation }));
 } else throw new Error('bad mode');
 process.exit(0);
