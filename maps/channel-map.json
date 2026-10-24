@@ -1,0 +1,1166 @@
+{
+  "generatedAt": "2026-10-22T18:51:00+00:00",
+  "source": "PR Shepherd channel map (65732847), routing fields only",
+  "channels": {
+    "C0807BT5J4U": "pod-automations",
+    "C084LKVRUM8": "pod-agent-core",
+    "C08861P5DB2": "pod-platform",
+    "C08867C315E": "pod-cli",
+    "C09HAL8RNET": "pod-sovereign-rsi",
+    "C09KRHJAPDG": "pod-apps",
+    "C09QFUMDWLD": "pod-cloud-sandboxes",
+    "C0B6J43J2A2": "pod-cli-sdk",
+    "C0B7EEQJ44Q": "pod-cli-mcp",
+    "C0B7MNT29TN": "pod-apps-connectors",
+    "C0BAHQD073J": "pod-ac-sandboxes",
+    "C0BL252JWQ6": "proj-droid-speed",
+    "C0BL26Z3JQP": "proj-cloud-sync",
+    "C0BPEQG0B36": "proj-remote-delegations",
+    "C0BPRT13YNA": "pod-models-routing-inference",
+    "C0BQ75WCJLT": "proj-byok",
+    "C0BQHCNC5AQ": "pod-validation",
+    "C0BQXGMNQH2": "pod-sovereign-rsi-code-health",
+    "C0BRL39RPQD": "proj-image-gen",
+    "C0BRPC31ND6": "pod-apps-onboarding",
+    "C0BRSJXPZNX": "proj-opencompute",
+    "C0BSQ4NU2SD": "proj-environments",
+    "C0BU17XA22X": "pod-security-and-it",
+    "C0C1CJL6UMV": "proj-desktop-unification",
+    "C0C1M0X3T0B": "proj-ptc",
+    "C0C1XDZD7KR": "proj-byok-enterprise",
+    "C0C2SCQNV6V": "proj-promos-v2",
+    "C0C2WAF4A9K": "proj-autonomy-v2",
+    "C0C43P6AP8U": "proj-onboarding-lessons",
+    "C0C44SEQX3K": "proj-open-frontier-standards",
+    "C0C4ZLY59DM": "proj-openai-auth",
+    "C0C6QJ5DR09": "proj-mobile",
+    "C0C7G80BWPJ": "proj-sites",
+    "C0C7QML236F": "proj-seo-and-aeo",
+    "C0C98ME1MKQ": "proj-100k",
+    "C0C9XRQDYHG": "proj-delegation-automation-unification",
+    "C0CAG0JNKDG": "proj-postsales-cleanup",
+    "C0CAX8YE0UV": "pod-cyber",
+    "C0CB6SR4TK3": "proj-privacy-update"
+  },
+  "rules": [
+    {
+      "prefix": ".factory/factory-mono-plugins",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": ".factory/skills",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": ".github/actions",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": ".github/scripts",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/ci-graph",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/cli",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "apps/compute-gateway",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/desktop",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "apps/functions",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/jira-forge",
+      "channel": "C0BPEQG0B36"
+    },
+    {
+      "prefix": "apps/relay",
+      "channel": "C09QFUMDWLD"
+    },
+    {
+      "prefix": "apps/signal",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/storybook",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "evals/contracts",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "evals/packages",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "evals/scripts",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "evals/src",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "evals/tests",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "infra/env",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "infra/stacks",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "infra/vendor",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "packages/component-library",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/core-ui",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/droid-sdk",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/droid-sdk-ext",
+      "channel": "C0B6J43J2A2"
+    },
+    {
+      "prefix": "packages/environment",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "packages/eslint-config",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "packages/eslint-plugin-factory",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/frontend",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/i18n",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/opencompute-contract",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "packages/runtime",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "packages/software-factory-db",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": ".factory/skills/create-lesson",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": ".github/actions/evals",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/backend/e2e",
+      "channel": "C0BPEQG0B36"
+    },
+    {
+      "prefix": "apps/backend/scripts",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/cli/assets",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "apps/cli/builtin-skills",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/cli/script-runtime",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "apps/cli/scripts",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/prem/helm",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/web/src",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "infra/env/gcp",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "packages/daemon-sdk/tests",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "packages/runtime/auth",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "packages/runtime/feature-flags",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/runtime/git",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/runtime/json-store",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "packages/runtime/plugins",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/runtime/session-search",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "packages/runtime/shell",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": ".factory/factory-mono-plugins/plugins/llm-ops",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": ".factory/factory-mono-plugins/plugins/platform-ops",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "apps/backend/src/bug-attribution",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/backend/src/data",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/backend/src/db",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/backend/src/features",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/backend/src/pr-risk",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/backend/src/utils",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/backend/src/workflows",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/ci-graph/src/registry",
+      "channel": "C0B6J43J2A2"
+    },
+    {
+      "prefix": "apps/cli/builtin-skills/create-software-factory-workstream",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/cli/builtin-skills/pull-request-layer-manifest",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "apps/cli/builtin-skills/security-review",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/cli/builtin-skills/shared-context",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/cli/builtin-skills/software-factory",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/cli/builtin-skills/software-factory-db",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/cli/builtin-skills/wiki",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/cli/scripts/script-runtime",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "apps/cli/src/adapters",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/agent",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "apps/cli/src/constants",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/contexts",
+      "channel": "C0BL252JWQ6"
+    },
+    {
+      "prefix": "apps/cli/src/controllers",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/core",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/events",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/llm-proxy",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/cli/src/models",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/cli/src/repl",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "apps/cli/src/search",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/cli/src/skills",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/cli/src/telemetry",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "apps/prem/src/errors",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/prem/src/middleware",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/prem/src/scripts",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/scripts/src/automations-canary",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/scripts/src/codemods",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "apps/scripts/src/jira-dev",
+      "channel": "C0BPEQG0B36"
+    },
+    {
+      "prefix": "apps/scripts/src/managed-settings-ui-coverage",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/scripts/src/migrations",
+      "channel": "C0BSQ4NU2SD"
+    },
+    {
+      "prefix": "apps/scripts/src/protocol-manifest",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/scripts/src/qa-merge-reports",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/scripts/src/qa-pr-comment",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/scripts/src/slack-manifest",
+      "channel": "C0BPEQG0B36"
+    },
+    {
+      "prefix": "infra/env/aws/modules",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/common/src/automations",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/common/src/feature-flags",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/common/src/integrations",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/common/src/llm",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/common/src/organization",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "packages/common/src/policy",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "packages/common/src/settings",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/common/src/software-factory",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/component-library/src/analytics",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "packages/component-library/src/automations",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/component-library/src/evaluations",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "packages/component-library/src/inbox",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/component-library/src/missions",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/component-library/src/software-factory",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/daemon-core/src/attention",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/daemon-core/src/automations",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/daemon-core/src/capabilities",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/daemon-core/src/crons",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "packages/daemon-core/src/models",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "packages/daemon-core/src/relay",
+      "channel": "C09QFUMDWLD"
+    },
+    {
+      "prefix": "packages/daemon-core/src/services",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "packages/daemon-core/src/software-factory",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/daemon-core/src/test-utils",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "packages/daemon-sdk/src/transports",
+      "channel": "C0B6J43J2A2"
+    },
+    {
+      "prefix": "packages/droid-core/src/core",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/droid-core/src/streaming",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/droid-core/src/tools",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "packages/frontend/src/services",
+      "channel": "C09QFUMDWLD"
+    },
+    {
+      "prefix": "packages/logging/src/errors",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/logging/src/metadata",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/logging/src/node",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/server/src/clients",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/server/src/computers",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "packages/server/src/execution-templates",
+      "channel": "C0BSQ4NU2SD"
+    },
+    {
+      "prefix": "packages/server/src/inbox",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/server/src/llm",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/server/src/managed-settings",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "packages/server/src/opencompute",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "packages/server/src/prem",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/server/src/sandbox-environments",
+      "channel": "C0BSQ4NU2SD"
+    },
+    {
+      "prefix": "packages/server/src/usage",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/utils/src/agent-browser",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/utils/src/automations",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/utils/src/environment",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/utils/src/git",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "packages/utils/src/llm",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/utils/src/messages",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "packages/utils/src/mission",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/utils/src/models",
+      "channel": "C0BQ75WCJLT"
+    },
+    {
+      "prefix": "packages/utils/src/openCompute",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "packages/utils/src/pull-requests",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/utils/src/rules",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/utils/src/session-search",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "packages/utils/src/shell",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/utils/src/software-factory",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/utils/src/text",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "apps/backend/src/clients/jira",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/backend/src/clients/mongodb",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/clients/postgres",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/backend/src/clients/stripe",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/clients/workos",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/features/connectors",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "apps/backend/src/features/feature-flags",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/backend/src/features/llm",
+      "channel": "C0BPEQG0B36"
+    },
+    {
+      "prefix": "apps/backend/src/features/openCompute",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/backend/src/features/prem-dual-write",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/backend/src/features/provider-routing",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/backend/src/lib/aws",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/backend/src/lib/encryption",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/backend/src/lib/models",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/services/automation",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/backend/src/services/automations",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "apps/backend/src/services/aws",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/backend/src/services/bigquery",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/services/billing",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/services/computer",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/backend/src/services/connectors",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "apps/backend/src/services/droid-execution",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/backend/src/services/evals",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/backend/src/services/executionTemplates",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/backend/src/services/inbox",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/backend/src/services/llm",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/backend/src/services/orb",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/services/prem",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/backend/src/services/prem-replication",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/backend/src/services/resourceCleanup",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/backend/src/services/sandbox",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/services/sandboxEnvironments",
+      "channel": "C0BSQ4NU2SD"
+    },
+    {
+      "prefix": "apps/backend/src/services/sessions",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/backend/src/services/softwareFactory",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/backend/src/services/usage-cap-alerts",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/services/workos",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "apps/backend/src/workflows/executionTemplates",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/backend/src/workflows/signals-async",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/cli/src/acp/session",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/commands/skills",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "apps/cli/src/components/droids",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/cli/src/entrypoints/computer",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "apps/cli/src/entrypoints/experiments",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/cli/src/entrypoints/pull-request",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "apps/cli/src/entrypoints/software-factory",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/cli/src/hooks/compaction",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/mcp/clients",
+      "channel": "C0B7EEQJ44Q"
+    },
+    {
+      "prefix": "apps/cli/src/prompt-tuning/evaluation",
+      "channel": "C0BL252JWQ6"
+    },
+    {
+      "prefix": "apps/cli/src/services/TerminalService",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "apps/cli/src/services/automations",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/cli/src/services/btw",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/cli/src/services/cloud-sync",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/services/deferredTools",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "apps/cli/src/services/droids",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/services/local-signals",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "apps/cli/src/services/riskClassifiers",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/services/space-sync",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/cli/src/services/task-invocations",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/services/update",
+      "channel": "C0BL252JWQ6"
+    },
+    {
+      "prefix": "apps/cli/src/telemetry/customer",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "apps/cli/src/telemetry/product",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/cli/src/tools/descriptions",
+      "channel": "C0BL252JWQ6"
+    },
+    {
+      "prefix": "apps/cli/src/utils/messages",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "apps/prem/src/db/queries",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/prem/src/db/test-utils",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/prem/src/db/types",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/prem/src/routes/context",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/prem/src/routes/cron",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/prem/src/routes/llm",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/prem/src/routes/sessions",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/prem/src/routes/v0",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "apps/prem/src/services/auth",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "apps/prem/src/services/automations",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "apps/prem/src/services/inbox",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "apps/prem/src/services/provider-credentials",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "apps/prem/src/services/token-admission",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/common/src/api/backend",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/common/src/api/connectors",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/common/src/api/datasets",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "packages/common/src/api/droid-shield",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "packages/common/src/api/evaluations",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "packages/common/src/api/llm-proxy",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/common/src/api/pr-risk",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "packages/common/src/api/pull-requests",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/common/src/api/software-factory",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/common/src/api/user",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "packages/common/src/api/webhooks",
+      "channel": "C0BPEQG0B36"
+    },
+    {
+      "prefix": "packages/common/src/integrations/slack",
+      "channel": "C0BPEQG0B36"
+    },
+    {
+      "prefix": "packages/common/src/organization/onboarding",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/common/src/session/jsonl",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "packages/component-library/src/analytics/WorkItemStatusIcon",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/component-library/src/analytics/v2",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/component-library/src/chat/pane-tabs",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/component-library/src/layout/MissionAgents",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/component-library/src/onboarding/FirstRunOnboarding",
+      "channel": "C0BRPC31ND6"
+    },
+    {
+      "prefix": "packages/component-library/src/onboarding/NextStepsStage",
+      "channel": "C0BRPC31ND6"
+    },
+    {
+      "prefix": "packages/component-library/src/onboarding/PaymentStage",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/component-library/src/onboarding/ProPlanCard",
+      "channel": "C0BRPC31ND6"
+    },
+    {
+      "prefix": "packages/daemon-core/src/server/auth",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/daemon-core/src/server/handlers",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/daemon-core/src/server/same-process",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/daemon-sdk/src/session/core",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/daemon-sdk/src/session/messages",
+      "channel": "C08867C315E"
+    },
+    {
+      "prefix": "packages/droid-core/src/llms/errors",
+      "channel": "C0BPRT13YNA"
+    },
+    {
+      "prefix": "packages/droid-sdk-core/src/protocol/context",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/droid-sdk-core/src/protocol/models",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/droid-sdk-core/src/protocol/sessionV2",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "packages/droid-sdk-core/src/protocol/shared",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/frontend/src/app/routing",
+      "channel": "C08861P5DB2"
+    },
+    {
+      "prefix": "packages/frontend/src/features/analytics",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "packages/frontend/src/features/automations-v2",
+      "channel": "C0807BT5J4U"
+    },
+    {
+      "prefix": "packages/frontend/src/features/evaluations",
+      "channel": "C09HAL8RNET"
+    },
+    {
+      "prefix": "packages/frontend/src/features/inbox",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/frontend/src/features/missions",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/frontend/src/features/software-factory",
+      "channel": "C0C1CJL6UMV"
+    },
+    {
+      "prefix": "packages/runtime/auth/src/credentials",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "packages/runtime/settings/src/config-sync",
+      "channel": "C0BL26Z3JQP"
+    },
+    {
+      "prefix": "packages/runtime/settings/src/constants",
+      "channel": "C0BQ75WCJLT"
+    },
+    {
+      "prefix": "packages/server/src/llm/clients",
+      "channel": "C0B6J43J2A2"
+    },
+    {
+      "prefix": "packages/server/src/llm/proxy-headers",
+      "channel": "C0B6J43J2A2"
+    },
+    {
+      "prefix": "packages/server/src/llm/responses-websocket",
+      "channel": "C0C1M0X3T0B"
+    },
+    {
+      "prefix": "packages/server/src/prem/replication",
+      "channel": "C0BQHCNC5AQ"
+    },
+    {
+      "prefix": "packages/utils/src/llm/providers",
+      "channel": "C084LKVRUM8"
+    },
+    {
+      "prefix": "packages/utils/src/organization/computers",
+      "channel": "C0BRSJXPZNX"
+    },
+    {
+      "prefix": "packages/utils/src/organization/onboarding",
+      "channel": "C09KRHJAPDG"
+    },
+    {
+      "prefix": "packages/utils/src/organization/subscription",
+      "channel": "C08861P5DB2"
+    }
+  ],
+  "overrides": [
+    {
+      "prefix": "packages/droid-core/src/llms",
+      "channel": "C0BPRT13YNA",
+      "channelName": "pod-models-routing-inference"
+    }
+  ]
+}
