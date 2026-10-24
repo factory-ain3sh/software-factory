@@ -15,8 +15,8 @@ const [templateId, mode] = process.argv.slice(2);
 if (!templateId || !['check', 'apply'].includes(mode ?? '')) throw new Error('usage: template-env.ts <templateId> check|apply');
 
 const ENVS = {
-  dev: { api: 'https://dev.api.factory.ai', app: 'https://dev.app.factory.ai' },
-  prod: { api: 'https://api.factory.ai', app: 'https://app.factory.ai' },
+  dev: { host: 'dev.' },
+  prod: { host: '' },
 } as const;
 type Env = keyof typeof ENVS;
 const keyOf = (env: Env) => {
@@ -26,19 +26,16 @@ const keyOf = (env: Env) => {
 };
 const keys: Record<Env, string> = { dev: keyOf('dev'), prod: keyOf('prod') };
 
-const BEGIN = '# factory credentials: managed by factory-ain3sh/software-factory local/template-env.ts';
-const END = '# end factory credentials';
+const BEGIN = '# factory creds (software-factory local/template-env.ts)';
+const END = '# end factory creds';
+// The environment caps its setup script at 10000 characters, so the region
+// writes each key once and derives the rest; ENVS names each env's host prefix.
 const region = [
   BEGIN,
-  ...(Object.keys(ENVS) as Env[]).flatMap((env) => [
-    `cat > "$HOME/factory/.env.${env}" <<'EOF'`,
-    `FACTORY_API_KEY=${keys[env]}`,
-    'EOF',
-    `ln -sfn "$HOME/factory/.env.${env}" "$HOME/.factory/.env.${env}"`,
-    `cat > "$HOME/factory/${env}-env.json" <<'EOF'`,
-    JSON.stringify({ FACTORY_API_BASE_URL: ENVS[env].api, FACTORY_API_KEY: keys[env], FACTORY_APP_BASE_URL: ENVS[env].app }),
-    'EOF',
-  ]),
+  ...(Object.keys(ENVS) as Env[]).flatMap((env) => [`cat >"$HOME/factory/.env.${env}" <<'EOF'`, `FACTORY_API_KEY=${keys[env]}`, 'EOF']),
+  `fk() { sed -n 's/^FACTORY_API_KEY=//p' "$HOME/factory/.env.$1"; }`,
+  `fj() { ln -sfn "$HOME/factory/.env.$1" "$HOME/.factory/.env.$1"; printf '{"FACTORY_API_BASE_URL":"https://%sapi.factory.ai","FACTORY_API_KEY":"%s","FACTORY_APP_BASE_URL":"https://%sapp.factory.ai"}\\n' "$2" "$(fk $1)" "$2" >"$HOME/factory/$1-env.json"; }`,
+  ...(Object.keys(ENVS) as Env[]).map((env) => `fj ${env} '${ENVS[env].host}'`),
   END,
 ].join('\n');
 
@@ -50,8 +47,9 @@ const legacy = /cat > "\$HOME\/factory\/\.env\.dev" <<'EOF'\nFACTORY_API_KEY=\S+
 const target = marked.test(current) ? marked : legacy;
 if (!target.test(current)) throw new Error('could not find the credentials region in the setup script');
 let next = current.replace(target, () => region);
+next = next.replace(/^prod_key=.*$/m, 'prod_key="$(fk prod)"');
 if (!/^prod_key=/m.test(next)) {
-  next = next.replace(/^droid plugin marketplace list/m, `prod_key="$(sed -n 's/^FACTORY_API_KEY=//p' "$HOME/factory/.env.prod")"\ndroid plugin marketplace list`);
+  next = next.replace(/^droid plugin marketplace list/m, 'prod_key="$(fk prod)"\ndroid plugin marketplace list');
 }
 next = next
   .split('\n')
@@ -67,8 +65,10 @@ for (let i = 0, j = 0; (i < a.length || j < b.length) && shown < 60; ) {
   else { console.log(`- ${a[i++]}`); shown++; }
 }
 if (next === current) console.log('no change');
+console.log(`setup script: ${current.length} -> ${next.length} characters (limit 10000)`);
+if (next.length > 10_000) throw new Error('the setup script would exceed the environment limit of 10000 characters');
 if (mode === 'apply' && next !== current) {
   const res = await backend(endpoint, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ setupScript: next }) });
-  console.log('PATCH', res.status);
+  console.log('PATCH', res.status, res.ok ? '' : redact(await res.text()).slice(0, 600));
 }
 process.exit(0);
