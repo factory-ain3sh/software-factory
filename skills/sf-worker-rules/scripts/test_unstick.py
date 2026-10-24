@@ -431,6 +431,23 @@ class UnstickTests(unittest.TestCase):
         self.assertEqual([], self.h.calls("state-publish"))
         self.assertFalse(self.h.event("rec-1")["read"])
 
+    def test_row_long_before_a_folded_event_is_released_when_a_retry_notice_names_it(self):
+        self.seed(activity("act-1", EVENT_AT - timedelta(hours=8)))
+        self.h.state["events"].append(plain_event("try-1", EVENT_AT - timedelta(hours=4), title="Recovering unpublished worker state",
+            detail=f"Activity act-1 finished 240 minutes ago, but its portable state on Computer {COMPUTER} was never published, so new activities are on hold. Publishing it from that Computer now."))
+        code, report, stderr = self.h.run()
+        self.assertEqual(0, code, (report, stderr))
+        self.assertEqual([COMPUTER], [r["computer"] for r in report["released"]])
+        self.assertEqual([], self.h.marker_rows())
+
+    def test_a_retry_notice_for_another_computer_does_not_authorize(self):
+        self.seed(activity("act-1", EVENT_AT - timedelta(hours=8)))
+        self.h.state["events"].append(plain_event("try-1", EVENT_AT - timedelta(hours=4), title="Recovering unpublished worker state",
+            detail=f"Activity act-1 finished 240 minutes ago, but its portable state on Computer {OTHER_COMPUTER} was never published."))
+        code, report, _ = self.h.run()
+        self.assertEqual(1, code)
+        self.assertEqual(1, len(report["ambiguous"]), report)
+
     def test_row_exactly_thirty_minutes_before_event_is_released(self):
         self.seed(activity("act-1", EVENT_AT - timedelta(minutes=30)))
         code, report, stderr = self.h.run()

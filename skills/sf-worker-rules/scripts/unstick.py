@@ -54,6 +54,12 @@ FACTORY_DIR = ".factory"
 # earlier run on a reused Computer, whose finalizer could still be live.
 MAX_BLOCK_AGE = timedelta(minutes=30)
 RELEASE_TITLE = "Work queue restarted after a finished run could not be saved"
+# The coordinator retries a failed save from the same Computer before it gives
+# up, announcing each try under this title with the exact activity and
+# Computer ("Activity <id> finished N minutes ago, but its portable state on
+# Computer <id> ..."). Its retries run for hours, and the recovery event folds
+# (SOF-391), so that naming, not the recovery event's time, ties a row to it.
+ATTEMPT_TITLE = "Recovering unpublished worker state"
 # The coordinator halts claims only when a marker sits within the newest
 # MAX_TOTAL_ACTIVITY_CONCURRENCY (64) rows per terminal status, newest first
 # (activityCoordinator.ts hasPendingPortableStatePublication); older markers
@@ -159,7 +165,14 @@ def notices_for(events, event, computer):
     return [other for other in events if other["title"] == RELEASE_TITLE and reference.search(other.get("detail") or "")]
 
 
-def rejection(rows, event):
+def named_by_attempt(events, row, computer):
+    """Whether one of the coordinator's own retry notices names this activity on this Computer."""
+    activity = re.compile(rf"\bActivity {re.escape(row['id'])}\b")
+    on_computer = re.compile(rf"\bComputer {re.escape(computer)}\b")
+    return any(e["title"] == ATTEMPT_TITLE and activity.search(e.get("detail") or "") and on_computer.search(e.get("detail") or "") for e in events)
+
+
+def rejection(rows, event, events=(), computer=None):
     """Why this event cannot authorize releasing these rows, or None."""
     try:
         event_at = when(event["createdAt"])
@@ -169,6 +182,8 @@ def rejection(rows, event):
             done_at = when(row["completedAt"])
             if done_at > event_at:
                 return f"activity {row['id']} finished after the recovery event"
+            if computer and named_by_attempt(events, row, computer):
+                continue
             if event_at - done_at > MAX_BLOCK_AGE:
                 return f"activity {row['id']} finished more than 30 minutes before the recovery event"
     except SfError as error:
@@ -346,7 +361,7 @@ def run(workstream):
             except SfError as error:
                 report["released"].append({**entry, "notified": False, "reason": str(error)})
             continue
-        why = rejection(rows, event)
+        why = rejection(rows, event, events, computer)
         if why:
             report["ambiguous"].append({**entry, "reason": why})
             continue
