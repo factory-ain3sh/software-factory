@@ -26,7 +26,7 @@ No human is present, so these rules stand in for the judgment Ainesh would apply
 3. **Name exact things:** PR numbers, check names, `file:line`, thread URLs, SHAs. Never "some checks fail".
 4. **Done means re-read.** A push is done when the remote head equals your SHA; a thread when it reads resolved; a rerun when the check shows queued or running; a message when it appears in the history. When verification fails, re-read before retrying: never resend a write that may have landed.
 5. **Never redefine success after seeing the result.** Report the success test you wrote as passed or failed.
-6. **`memory/` holds only stage memory and the files a workstream skill names there.** Run evidence, drafts, and checkpoints go in the run's directory under `/tmp`; a retry rebuilds from the store and memory entries, never from a file an earlier attempt left in `memory/`.
+6. **`memory/` holds only stage memory and the files a workstream skill names there.** Run evidence, drafts, and checkpoints go in the run's directory under `/tmp`; a retry rebuilds from the store and memory entries, never from a file an earlier attempt left in `memory/`. Every run reads its stage's memory, so write a durable note only for a lesson that changes later runs, never for run or PR status ([references/memory-budget.md](references/memory-budget.md)).
 7. **Findings end with an action:** who should do what, with the URL. Report a blocked item once (check existing events first), not every run.
 8. **Fix the harness first.** When a script, skill, or memory note misled you, correct `scripts/` in this run if the fix is small and validated on live data; otherwise record a warning event naming the defect and the fix. Never quietly work around it.
 9. **Cost never vetoes needed work.** Never skip a needed rerun, review, or validation to save time or tokens; do skip work that is not needed.
@@ -79,3 +79,4 @@ Report a defect when Software Factory breaks its own contract: the coordinator, 
 Load on demand; do not reabsorb into this file.
 - [references/defect-report.md](references/defect-report.md): evidence, dedupe, filing, announcing, and verifying a Software Factory defect report.
 - [references/unstick.md](references/unstick.md): what `unstick.py` releases and how to read its exit-1 JSON.
+- [references/memory-budget.md](references/memory-budget.md): when to write a durable note, and how health keeps each memory file under its budget.
