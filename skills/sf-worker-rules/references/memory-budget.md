@@ -21,3 +21,15 @@ awk '/^### Durable note:/{n++; getline; getline; if ($0 ~ /^> Retired:/) r++} EN
 - Exempt from the budget and from consolidation: notes a skill names as a ledger (for example `pending-<changeId>` and `verdict-<changeId>` verification notes) and notes recording Ainesh's decisions (`decision-*`), except that a newer decision supersedes an older one.
 - Never replace the `## Notes` preamble: it holds Ainesh's decisions. Never retire a note to silence a finding instead of resolving it.
 - Use the memory contract in the health skill for the retire and merge commands.
+
+## How to consolidate
+
+Consolidation is skill maintenance, not housekeeping. Load these skills first and apply them to the notes as a set:
+
+- **harness-optimization:** for each cluster of related notes, ask what made runs need them (a skill gap, a misleading instruction, a tool defect) and name that owning layer, instead of keeping a pile of workarounds.
+- **single-canon:** one owner per fact. A fact the skills, scripts, or worker rules already own leaves memory; each topic ends as one note.
+- **patch-coherence:** notes that describe competing workarounds or explanations for the same symptom are reconciled to the one that holds now.
+- **update-skill:** surviving notes are action-first and verified against the current scripts and code; every retired note maps to its new home or a stated reason, so nothing load-bearing is lost.
+- **retrospective:** before writing, review the whole set of changes as a stranger would: dead weight, drift, and slop go.
+
+Health runs on `gpt-6-astra` at high effort, and the consolidation stays in that session.
