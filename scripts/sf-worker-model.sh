@@ -18,3 +18,4 @@ pin() {
 pin pr-shepherd claude-opus-5-5
 pin ownership-incident-fixer claude-opus-5-5
 pin re-review claude-opus-5-5
+pin sf-ticket-fixer claude-opus-5-5

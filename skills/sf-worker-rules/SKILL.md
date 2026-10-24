@@ -208,6 +208,14 @@ recorded, put those same recovery details in the run's final message.
   path. Do branch work in `~/repos/factory-mono-worktrees/<branch>`;
   `git -C ~/repos/factory-mono fetch` and `worktree add` are allowed. Never put
   a mutating git verb and a `repos/factory-mono` path in one command.
+  `bash ~/repos/software-factory/skills/sf-worker-rules/scripts/fix-worktree.sh new <branch> [--base <branch>]`
+  (or `pr <number>` for a detached PR checkout) prepares that worktree; its
+  header lists the refusals.
+- Ainesh's subagent roster with built-in model ids lives in
+  `~/repos/software-factory/skills/sf-worker-rules/droids/`; each workstream's
+  `scripts/setup-run.sh` installs it into `~/.factory/droids/`. His laptop
+  droids point at BYOK models that do not exist here, and an unresolvable
+  droid model silently falls back to the session model.
 - Never install packages in a worktree. Mirror dependencies with
   `python3 ~/.agents/skills/worktree-setup/scripts/repair.py` from inside it.
   `worktree-cli` and `stack` are not installed; restack with
